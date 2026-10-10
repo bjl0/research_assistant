@@ -73,6 +73,7 @@ tbody tr:last-child td { border-bottom: 0; }
 .conf.mid .bar > span { background: var(--warn); }
 .sol { font-family: var(--mono); font-size: 11.5px; }
 .sol.zero { color: var(--faint); }
+.pnl { font-family: var(--mono); font-size: 11.5px; color: var(--good); border: 1px solid color-mix(in srgb, var(--good) 45%, transparent); background: color-mix(in srgb, var(--good) 12%, transparent); padding: 1px 6px; border-radius: 3px; }
 .usd { font-family: var(--mono); font-size: 11.5px; color: var(--warn); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); background: color-mix(in srgb, var(--warn) 12%, transparent); padding: 1px 6px; border-radius: 3px; }
 .dim { color: var(--faint); font-family: var(--mono); font-size: 11.5px; }
 .flag { font-family: var(--mono); font-size: 10px; letter-spacing: .05em; padding: 1px 5px; border-radius: 3px; border: 1px solid var(--line); color: var(--muted); margin-right: 4px; text-transform: uppercase; }
@@ -133,7 +134,8 @@ label.f input, label.f select, label.f textarea { background: var(--bg); border:
   <div class="more" id="more" hidden><span id="shown"></span><button class="btn ghost" id="moreBtn" type="button">Show 100 more</button></div>
 
   <section class="legend" aria-label="How to read this table">
-    <div><h2>Confidence</h2><p>Set by the kind of evidence, not guessed per wallet. 80: a pump.fun profile name. 70: a RugCheck insider flag. 50: a pump.fun name that looks auto-generated. Your own labels use the value you choose.</p></div>
+    <div><h2>Confidence</h2><p>Set by the kind of evidence, not guessed per wallet. 90: on pump.fun's own profit leaderboard. 80: a pump.fun profile name. 70: a RugCheck insider flag. 50: a pump.fun name that looks auto-generated. Your own labels use the value you choose.</p></div>
+    <div><h2>PF Profit</h2><p>The wallet's best profit on pump.fun's leaderboard (top 100 for the last 24 hours, 7 days and 30 days, by total and by realized profit) at the last scan. Total profit includes gains on coins still held. The tag next to the name shows its best rank.</p></div>
     <div><h2>Tracked $</h2><p>Value this wallet held across the screener's tokens at the last scan, from RugCheck's top-holder list and price. It covers only those tokens, so it is a floor, not a net worth.</p></div>
     <div><h2>SOL balance</h2><p>Turn on with the SOL BALANCE button. Native SOL in the wallet when the labels were last scanned, read from a Solana node. Wrapped SOL in token accounts, which is how trading pools hold it, is not counted.</p></div>
     <div><h2>Tokens</h2><p>How many screener tokens the wallet showed up in. The automatic list holds individual trader wallets only: token creators, pools, liquidity lockers and order-book markets are left out. Labels are research notes; names and profiles come from strangers and are shown as plain text.</p></div>
@@ -147,18 +149,18 @@ label.f input, label.f select, label.f textarea { background: var(--bg); border:
 (() => {
   const CATS = {
     AMM: "--c-amm", LOCKER: "--c-locker", CLOB: "--c-clob", CREATOR: "--c-creator", PROFILE: "--c-profile",
-    CEX: "--c-cex", "VC FUND": "--c-fund", KOL: "--c-kol", "SMART MONEY": "--c-smart", INSIDER: "--c-bad",
+    CEX: "--c-cex", "VC FUND": "--c-fund", KOL: "--c-kol", "SMART MONEY": "--c-smart", "TOP TRADER": "--c-smart", INSIDER: "--c-bad",
     EXPLOITER: "--c-bad", SCAMMER: "--c-bad", BOT: "--c-multi", MULTISIG: "--c-multi", TREASURY: "--c-treasury", OTHER: "--c-multi",
   };
   const MANUAL_CATS = ["CEX", "VC FUND", "KOL", "SMART MONEY", "INSIDER", "BOT", "SCAMMER", "EXPLOITER", "MULTISIG", "TREASURY", "CREATOR", "AMM", "OTHER"];
   const BASE_COLS = [
     ["address", "Address"], ["chain", "Chain"], ["label", "Label"], ["category", "Category"],
-    ["confidence", "Confidence"], ["holdings_usd", "Tracked $", "num"], ["ntokens", "Tokens", "num"], ["flags", "Flags"], ["updated_at", "Updated"],
+    ["confidence", "Confidence"], ["best_pnl_usd", "PF Profit", "num"], ["holdings_usd", "Tracked $", "num"], ["ntokens", "Tokens", "num"], ["flags", "Flags"], ["updated_at", "Updated"],
   ];
   const SOL_COL = ["sol_balance", "SOL", "num"];
   let showSol = false, hasSol = false;
   try { showSol = localStorage.getItem("showSol") === "1"; } catch {}
-  const cols = () => (showSol && hasSol ? [...BASE_COLS.slice(0, 6), SOL_COL, ...BASE_COLS.slice(6)] : BASE_COLS);
+  const cols = () => (showSol && hasSol ? [...BASE_COLS.slice(0, 7), SOL_COL, ...BASE_COLS.slice(7)] : BASE_COLS);
   const sol = (v) => v >= 1000 ? Math.round(v).toLocaleString() : v >= 1 ? v.toFixed(2) : v > 0 ? v.toFixed(4) : "0";
   const B58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
   const $ = (id) => document.getElementById(id);
@@ -269,6 +271,7 @@ label.f input, label.f select, label.f textarea { background: var(--bg); border:
       const cf = el("td"); const c = Math.max(0, Math.min(100, +r.confidence || 0));
       const cw = el("span", "conf" + (c < 80 ? " mid" : "")); cw.append(el("span", "", String(c)));
       const bar = el("span", "bar"); const fill = el("span"); fill.style.width = c + "%"; bar.append(fill); cw.append(bar); cf.append(cw); tr.append(cf);
+      const pt = el("td", "num"); pt.append(r.best_pnl_usd > 0 ? el("span", "pnl", money(r.best_pnl_usd)) : el("span", "dim", "—")); tr.append(pt);
       const ut = el("td", "num"); if (r.holdings_usd >= 1000) ut.append(el("span", "usd", money(r.holdings_usd))); else ut.append(el("span", "dim", r.holdings_usd > 0 ? money(r.holdings_usd) : "—")); tr.append(ut);
       if (showSol && hasSol) {
         const st = el("td", "num");
@@ -314,9 +317,16 @@ label.f input, label.f select, label.f textarea { background: var(--bg); border:
       item("Confidence", String(r.confidence ?? "—"));
       if (r.sublabel) item("Detail", txt(r.sublabel, 60));
       if (r.note) item("Note", txt(r.note, 500));
-      item("Evidence", (r.evidence || []).map((e) => ({ CREATOR: "Token creator (RugCheck)", RUGCHECK: "Named by RugCheck", PROFILE: "pump.fun profile", AUTONAME: "pump.fun profile", INSIDER: "RugCheck insider flag" }[e] || e)).join(", ") || (r.manual ? "Your label" : "—"));
+      item("Evidence", (r.evidence || []).map((e) => ({ CREATOR: "Token creator (RugCheck)", RUGCHECK: "Named by RugCheck", PROFILE: "pump.fun profile", AUTONAME: "pump.fun profile", INSIDER: "RugCheck insider flag", LEADERBOARD: "pump.fun profit leaderboard" }[e] || e)).join(", ") || (r.manual ? "Your label" : "—"));
       if (r.manual && r.auto) item("Auto label", `${txt(r.auto.label)} · ${txt(r.auto.category, 20)} · ${r.auto.confidence}`);
       item("Tokens", (r.tokens || []).map((t) => txt(t, 16)).join(", ") || "—");
+      if (Array.isArray(r.leaderboard) && r.leaderboard.length) {
+        const ul = el("div");
+        for (const pl of [...r.leaderboard].sort((a, b) => a.rank - b.rank).slice(0, 6)) {
+          ul.append(el("div", "", `#${+pl.rank || "?"} ${txt(pl.period, 4)} by ${pl.sort === "realized" ? "realized" : "total"} profit · ${money(+pl.pnl_usd || 0)}`));
+        }
+        item("pump.fun board", ul);
+      }
       item("Tracked $", r.holdings_usd > 0 ? money(r.holdings_usd) : "—");
       if (typeof r.sol_balance === "number") item("SOL balance", sol(r.sol_balance) + " SOL" + (meta?.sol_checked_at ? " · checked " + ago(meta.sol_checked_at) : ""));
       if (r.followers != null) item("Followers", Number(r.followers).toLocaleString() + " on pump.fun");
@@ -324,6 +334,7 @@ label.f input, label.f select, label.f textarea { background: var(--bg); border:
       p.append(dl);
       const links = el("div", "links");
       const a = el("a", "", "pump.fun profile ↗"); a.href = "https://pump.fun/profile/" + r.address; a.target = "_blank"; a.rel = "noopener noreferrer"; links.append(a);
+      if (/^[A-Za-z0-9_]{1,15}$/.test(r.x_username || "")) { const xa = el("a", "", "@" + r.x_username + " on X ↗"); xa.href = "https://x.com/" + r.x_username; xa.target = "_blank"; xa.rel = "noopener noreferrer"; links.append(xa); }
       p.append(links);
     }
     p.append(buildForm(r));

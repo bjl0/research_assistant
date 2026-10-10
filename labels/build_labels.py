@@ -16,6 +16,11 @@ large holders RugCheck marks as insiders. Left out entirely:
     accounts and its liquidity locker owners
   - token creator wallets, even if they also hold a token or have a
     pump.fun profile
+It also adds every wallet on pump.fun's own profit leaderboard
+(frontend-api-v3.pump.fun/pnl-leaderboard: daily, weekly and monthly, each
+sorted by combined and by realized profit, top 100 per list), with the
+pump.fun username, X handle and best placement.
+
 Then it looks up the pump.fun profile behind every
 holder wallet with at least 1% of a token, and keeps those that have a
 username. Names and profile text are written by strangers: they are stored
@@ -29,6 +34,7 @@ page hides its SOL balance option. Only native SOL is counted: wrapped SOL
 held in token accounts (as liquidity pools hold it) is not included.
 
 Confidence is fixed per kind of evidence, not guessed per wallet:
+  90 on pump.fun's profit leaderboard (pump.fun's own account data),
   80 pump.fun profile (self-chosen name), 70 RugCheck insider heuristic,
   50 pump.fun profile whose name looks auto-generated (three joined words,
   e.g. "PewterLemonAct"; these are flagged "auto-name").
@@ -36,7 +42,9 @@ Confidence is fixed per kind of evidence, not guessed per wallet:
 import json, os, re, sys, time, urllib.request, datetime
 
 UA = {"User-Agent": "solana-label-db/1.0", "Accept": "application/json"}
-CONF = {"PROFILE": 80, "INSIDER": 70, "AUTONAME": 50}
+CONF = {"LEADERBOARD": 90, "PROFILE": 80, "INSIDER": 70, "AUTONAME": 50}
+X_HANDLE = re.compile(r"^[A-Za-z0-9_]{1,15}$")
+PERIODS = {"daily": "24h", "weekly": "7d", "monthly": "30d"}
 AUTO_NAME = re.compile(r"^(?:[A-Z][a-z]+){3}$")
 
 
@@ -165,6 +173,35 @@ def main(tokens_path, out_path):
         else:
             r["sublabel"] = f"@{name}"
             r["evidence"].append("PROFILE")
+    for period, short in PERIODS.items():
+        for sort in ("combined", "realized"):
+            lb = get(f"https://frontend-api-v3.pump.fun/pnl-leaderboard?period={period}&sort={sort}&limit=100")
+            time.sleep(0.3)
+            entries = (lb or {}).get("entries") or []
+            print(f"leaderboard {period}/{sort}: {len(entries)} wallets", file=sys.stderr)
+            for e in entries:
+                w = e.get("walletAddress")
+                if not w or not re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{32,44}", w) or w in excluded:
+                    continue
+                r = row(w)
+                rank = int(e.get("rank") or 0)
+                place = {"period": short, "sort": sort, "rank": rank,
+                         "pnl_usd": round(float(e.get("pnlUsd") or 0), 2),
+                         "realized_usd": round(float(e.get("realizedPnlUsd") or 0), 2)}
+                r.setdefault("leaderboard", []).append(place)
+                best = min(r["leaderboard"], key=lambda x: x["rank"])
+                name = clean(e.get("username"), 40)
+                if not name or name == w[:6]:
+                    name = "pump.fun top trader"
+                claim(r, "TOP TRADER", name, f"PF #{best['rank']} {best['period']}", "LEADERBOARD")
+                if r["category"] == "TOP TRADER":
+                    r["sublabel"] = f"PF #{best['rank']} {best['period']}"
+                x = clean(e.get("xUsername"), 20)
+                if x and X_HANDLE.match(x):
+                    r["x_username"] = x
+                if e.get("isVerified") and "verified" not in r["flags"]:
+                    r["flags"].append("verified")
+                r["best_pnl_usd"] = max(r.get("best_pnl_usd") or 0, place["pnl_usd"])
     for addr, hd in holdings.items():
         if addr in rows:
             rows[addr]["holdings_usd"] = hd["usd"]
