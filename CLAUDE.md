@@ -68,3 +68,17 @@ The old session's shell could not reach any of the data sites; a network policy 
 - Data files are uploaded as artifact assets (`Artifact` publish with `asset: true`), then the dataset documents are repointed, then the old assets are deleted. Read an asset back with a single `path`, not `paths`.
 - RugCheck's locked-liquidity figures can disagree between a token's markets. The script uses total locked USD over total market liquidity; rows where the source data conflicts are flagged rather than guessed.
 - A pump.fun page exists for a token when its mint ends in `pump` or its venue is pumpfun or pumpswap (vanity mints do not end in `pump`).
+
+## Wallet label database (added 10 October 2026)
+
+**Page.** https://claude.ai/artifact/N6KrLkgXVPKqtQzGZcZWW3, titled "Solana Wallet Labels". A plain artifact (not a Dashboard-type one) with the `db` and `user` capabilities; page copy in `labels/page.html`. Store layout:
+
+| Store document | Holds | Who writes |
+| --- | --- | --- |
+| `auto/auto-0` … `auto/auto-N` (`{rows:[...]}`) | labels built by `labels/build_labels.py` | Claude only (rule: `auto` write `admin`) |
+| `meta/info` | last scan time, token and label counts | Claude only |
+| `labels/<wallet address>` | labels Blake adds or edits on the page; they override the auto label for that wallet | the page |
+
+**Refreshing.** `python3 labels/build_labels.py data/tokens.json labels/labels.json` (needs direct network access to RugCheck and pump.fun; this session's shell has it). It writes `labels/chunks/*.json`; write those to `auto/*` and `meta/info` with one `ArtifactData` batch, pinned with `if_version`, and delete any leftover `auto-N` documents if the chunk count shrank. Never touch the `labels` collection.
+
+**Confidence** is fixed by evidence type (99 creator, 95 RugCheck-named account, 80 pump.fun profile, 70 RugCheck insider, 50 auto-generated-looking pump.fun name). "Tracked $" only counts holdings in the screener's tokens. The page links only to pump.fun profiles.
