@@ -24,6 +24,9 @@
 .ls-alerts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,21rem),1fr));gap:var(--cds-gap-md)}
 .ls-alert{background:var(--color-bg);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:var(--cds-pad-md);display:flex;flex-direction:column;gap:var(--cds-gap-sm);min-width:0}
 .ls-alert-top{display:flex;flex-wrap:wrap;gap:var(--cds-gap-sm);align-items:baseline;justify-content:space-between}
+.ls-alert-who{display:flex;gap:var(--cds-gap-sm);align-items:center;min-width:0}
+.ls-thumb{width:2.5rem;height:2.5rem;flex:none;border-radius:50%;object-fit:cover;background:var(--color-panel);border:1px solid var(--color-border-line);box-sizing:border-box}
+.ls-thumb-none{display:flex;align-items:center;justify-content:center;color:var(--color-fg-muted);font-weight:var(--cds-font-weight-medium)}
 .ls-alert-name{display:flex;flex-wrap:wrap;gap:var(--cds-gap-sm);align-items:baseline;min-width:0}
 .ls-alert-sym{font-size:var(--cds-font-size-heading);font-weight:var(--cds-font-weight-medium)}
 .ls-alert-sub{color:var(--color-fg-muted);font-size:var(--cds-font-size-caption);overflow-wrap:anywhere}
@@ -323,6 +326,23 @@ const tokenLink = (mint, text, cls) => {
 };
 // outside links are built only from addresses on the three expected sites
 const safeUrl = (u, starts) => (typeof u === 'string' && starts.some((s) => u.startsWith(s)) ? u : null);
+// thumbnails come only as inline raster images saved by the run; anything else gets the letter fallback
+const safeImg = (u) => (typeof u === 'string' && u.length < 40000 && /^data:image\/(?:webp|png|jpeg|gif);base64,[A-Za-z0-9+/]+={0,2}$/.test(u) ? u : null);
+const thumbFor = (a) => {
+  const src = safeImg(a.image);
+  if (src) {
+    const img = el('img', 'ls-thumb');
+    img.src = src;
+    img.alt = '';
+    img.width = 40;
+    img.height = 40;
+    return img;
+  }
+  const letter = Array.from(String(a.symbol || '').replace(/^[^\p{L}\p{N}]+/u, ''))[0] || '?';
+  const none = el('span', 'ls-thumb ls-thumb-none', letter.toUpperCase());
+  none.setAttribute('aria-hidden', 'true');
+  return none;
+};
 const extLink = (href, text) => {
   const a = el('a', 'ls-link', text);
   a.href = href;
@@ -382,7 +402,9 @@ const drawAlerts = (src, p) => {
     const state = el('div', 'ls-chips');
     if (a.is_new) state.append(el('span', 'ls-pill ls-ok', 'New'));
     state.append(mark(el('span', 'ls-pill ' + (a.now === 'Meets strategy' ? 'ls-ok' : 'ls-off'), a.now || 'Not in the last run'), a, 'now'));
-    top.append(name, state);
+    const who = el('div', 'ls-alert-who');
+    who.append(thumbFor(a), name);
+    top.append(who, state);
 
     const chips = el('div', 'ls-chips');
     const trig = el('span', 'ls-chip');

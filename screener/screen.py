@@ -5,6 +5,9 @@
   screen.py urls-reports RUN   after market data is saved: prints the RugCheck report URLs to fetch
   screen.py build        RUN   after reports are saved: writes RUN/out/*.json, prints profile URLs still needed
                                and the alert summary. Safe to run again after saving profiles.
+  screen.py images       RUN   after the last build: downloads token thumbnails for the alerts into RUN/out/alerts.json.
+                               The one command that goes online itself; if the image site cannot be reached it
+                               keeps the thumbnails earlier runs saved and says so.
 
 RUN/ holds
   params.json          the saved strategy (the dashboard's dash/params document)
@@ -16,7 +19,7 @@ RUN/ holds
   in/report_*.json     one compact object per token
   in/profile_*.json    one compact object per wallet
 """
-import sys, os, re, json, glob, random, string, datetime as dt
+import sys, os, re, json, glob, random, string, base64, urllib.request, urllib.error, datetime as dt
 
 B58 = r"[1-9A-HJ-NP-Za-km-z]{32,44}"
 X_URL = re.compile(r"https://(?:x|twitter)\.com/[A-Za-z0-9_./?=&%+\-]+")   # only plain X links are kept
@@ -32,6 +35,10 @@ TRACK_DAYS = 14                   # keep re-pricing an alerted token for this lo
 MAX_REPORTS = 25                  # holder reports per run, deepest pools first
 MAX_PROFILE_LOOKUPS = 20          # new wallet lookups per run
 MIN_LOOKUP_PCT = 1.0              # only look up wallets holding at least this share of supply
+IMG_URL = "https://dd.dexscreener.com/ds-data/tokens/solana/%s.png"   # redirects to a 64 px thumbnail on cdn.dexscreener.com
+IMG_MAX_BYTES = 12000             # larger answers are skipped, not shrunk
+IMG_PER_RUN = 40                  # downloads per run
+IMG_RETRY_HOURS = 6               # wait this long before asking again for a token that had no image
 RAYDIUM_AUTH = {"GpMZbSM2GgvTKHJirzeGfMFoaZ8UR2X7F4v8vHTvxFbL": "Raydium CPMM pool",
                 "5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1": "Raydium pool"}
 VENUES = {"pumpfun": "Pump.fun bonding curve", "pumpswap": "PumpSwap", "raydium": "Raydium",
@@ -330,11 +337,64 @@ def update_alerts(prev, rows, p, as_of):
         a["is_new"] = a["first_alert_at"] == now
         for k in ("holders", "top10_wallets_pct", "largest_wallet_pct", "locked_lp_pct", "liquidity_usd", "volume_24h_usd"):
             a.setdefault(k, None)
-        for k in ("flags", "identified_holders", "identity_checks", "now", "age", "dexscreener_url", "pumpfun_url", "x_url", "x_kind"):
+        for k in ("flags", "identified_holders", "identity_checks", "now", "age", "dexscreener_url", "pumpfun_url", "x_url", "x_kind",
+                  "image", "image_checked_at"):
             a.setdefault(k, "")
         a["as_of"] = now
     out = sorted(by.values(), key=lambda a: a["first_alert_at"], reverse=True)[:200]
     return out, new
+
+
+def image_kind(b):
+    """Image type from the file's first bytes, or None. SVG is never accepted."""
+    if b[:4] == b"RIFF" and b[8:12] == b"WEBP": return "webp"
+    if b[:8] == b"\x89PNG\r\n\x1a\n": return "png"
+    if b[:3] == b"\xff\xd8\xff": return "jpeg"
+    if b[:6] in (b"GIF87a", b"GIF89a"): return "gif"
+    return None
+
+
+def fetch_image(mint):
+    """('ok', data URL) | ('none', None) when the token has no usable image | ('error', reason) when the site was not reached."""
+    req = urllib.request.Request(IMG_URL % mint, headers={"User-Agent": "Mozilla/5.0 (launch screener)", "Accept": "image/webp,image/*"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as f:
+            b = f.read(IMG_MAX_BYTES + 1)
+    except urllib.error.HTTPError as e:
+        return ("none", None) if e.code == 404 else ("error", "HTTP %d" % e.code)
+    except Exception as e:
+        return "error", str(getattr(e, "reason", e))
+    kind = image_kind(b)
+    if not kind or len(b) > IMG_MAX_BYTES:
+        return "none", None
+    return "ok", "data:image/%s;base64,%s" % (kind, base64.b64encode(b).decode("ascii"))
+
+
+def add_images(run, as_of):
+    path = os.path.join(run, "out", "alerts.json")
+    if not os.path.exists(path):
+        raise SystemExit("out/alerts.json is missing: run build first")
+    alerts = json.load(open(path, encoding="utf-8"))
+    todo = [a for a in alerts if not a.get("image") and (not a.get("image_checked_at")
+            or as_of - epoch(a["image_checked_at"]) >= IMG_RETRY_HOURS * 3600)][:IMG_PER_RUN]
+    got = none = 0
+    errors = []
+    for a in todo:
+        status, val = fetch_image(a["mint"])
+        if status == "error":
+            errors.append(val)
+            if len(errors) >= 3 and not got and not none:
+                break  # the site cannot be reached from here: stop rather than wait on every token
+            continue
+        a["image"], a["image_checked_at"] = (val if status == "ok" else ""), iso(as_of)
+        got += status == "ok"
+        none += status == "none"
+    json.dump(alerts, open(path, "w"), ensure_ascii=False, indent=0)
+    have = sum(1 for a in alerts if a.get("image"))
+    print("Images: %d downloaded, %d tokens have none, %d alerts now show a thumbnail out of %d." % (got, none, have, len(alerts)))
+    if errors:
+        print("Images: %d download(s) failed (%s). Thumbnails saved by earlier runs are kept; this is not an error for the run." % (
+            len(errors), errors[0]))
 
 
 def money(v):
@@ -342,7 +402,7 @@ def money(v):
 
 
 def main():
-    if len(sys.argv) != 3 or sys.argv[1] not in ("urls-market", "urls-reports", "build"):
+    if len(sys.argv) != 3 or sys.argv[1] not in ("urls-market", "urls-reports", "build", "images"):
         raise SystemExit(__doc__)
     cmd, run = sys.argv[1], sys.argv[2]
     p = get_params(run)
@@ -364,6 +424,9 @@ def main():
         return
 
     as_of = get_as_of(run)
+    if cmd == "images":
+        add_images(run, as_of)
+        return
     if cmd == "urls-reports":
         mk = market(run, as_of)
         need = [m for m, o in mk.items() if passes_market(o, p, as_of)]
