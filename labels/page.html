@@ -133,10 +133,10 @@ label.f input, label.f select, label.f textarea { background: var(--bg); border:
   <div class="more" id="more" hidden><span id="shown"></span><button class="btn ghost" id="moreBtn" type="button">Show 100 more</button></div>
 
   <section class="legend" aria-label="How to read this table">
-    <div><h2>Confidence</h2><p>Set by the kind of evidence, not guessed per wallet. 99: the token's creator on chain. 95: an account RugCheck names itself (pools, lockers, order books). 80: a pump.fun profile name. 70: a RugCheck insider flag. 50: a pump.fun name that looks auto-generated. Your own labels use the value you choose.</p></div>
+    <div><h2>Confidence</h2><p>Set by the kind of evidence, not guessed per wallet. 95: an account RugCheck names itself (pools, lockers, order books). 80: a pump.fun profile name. 70: a RugCheck insider flag. 50: a pump.fun name that looks auto-generated. Your own labels use the value you choose.</p></div>
     <div><h2>Tracked $</h2><p>Value this wallet held across the screener's tokens at the last scan, from RugCheck's top-holder list and price. It covers only those tokens, so it is a floor, not a net worth.</p></div>
     <div><h2>SOL balance</h2><p>Turn on with the SOL BALANCE button. Native SOL in the wallet when the labels were last scanned, read from a Solana node. Wrapped SOL in token accounts, which is how trading pools hold it, is not counted.</p></div>
-    <div><h2>Tokens</h2><p>How many screener tokens the wallet showed up in. Labels are research notes; names and profiles come from strangers and are shown as plain text.</p></div>
+    <div><h2>Tokens</h2><p>How many screener tokens the wallet showed up in. Token creators and Meteora pools are left out of the automatic list. Labels are research notes; names and profiles come from strangers and are shown as plain text.</p></div>
   </section>
 </div>
 
@@ -241,7 +241,6 @@ label.f input, label.f select, label.f textarea { background: var(--bg); border:
     const add = (label, v) => { const span = el("span", "", label + " "); span.append(el("b", "", v)); s.append(span); };
     add("wallets", all.length.toLocaleString());
     add("named by RugCheck", all.filter((r) => (r.evidence || []).includes("RUGCHECK")).length.toLocaleString());
-    add("creators", all.filter((r) => r.category === "CREATOR").length.toLocaleString());
     add("pump.fun profiles", all.filter((r) => (r.evidence || []).includes("PROFILE")).length.toLocaleString());
     add("your labels", String(manual.size));
     if (meta) $("stamp").textContent = `Last scan ${ago(meta.updated_at)} · ${meta.tokens_scanned} screener tokens`;

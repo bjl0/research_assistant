@@ -9,10 +9,12 @@ labels people add on the page live in its `labels` collection and are never
 touched by this script.
 
 For each token mint it downloads the RugCheck report and collects:
-  - accounts RugCheck names itself (AMM pools, lockers, exchanges ...)
-  - the token's creator wallet
+  - accounts RugCheck names itself (AMM pools, lockers, exchanges ...),
+    except Meteora pools and pool positions
   - large holders RugCheck marks as insiders
-Then it looks up the pump.fun profile behind every creator and every
+Token creator wallets are left out entirely, even if they also hold a
+token or have a pump.fun profile.
+Then it looks up the pump.fun profile behind every
 holder wallet with at least 1% of a token, and keeps those that have a
 username. Names and profile text are written by strangers: they are stored
 as plain text and never followed.
@@ -25,7 +27,7 @@ page hides its SOL balance option. Only native SOL is counted: wrapped SOL
 held in token accounts (as liquidity pools hold it) is not included.
 
 Confidence is fixed per kind of evidence, not guessed per wallet:
-  99 creator (on-chain record), 95 RugCheck named account,
+  95 RugCheck named account,
   80 pump.fun profile (self-chosen name), 70 RugCheck insider heuristic,
   50 pump.fun profile whose name looks auto-generated (three joined words,
   e.g. "PewterLemonAct"; these are flagged "auto-name").
@@ -33,7 +35,10 @@ Confidence is fixed per kind of evidence, not guessed per wallet:
 import json, os, re, sys, time, urllib.request, datetime
 
 UA = {"User-Agent": "solana-label-db/1.0", "Accept": "application/json"}
-CONF = {"CREATOR": 99, "RUGCHECK": 95, "PROFILE": 80, "INSIDER": 70, "AUTONAME": 50}
+CONF = {"RUGCHECK": 95, "PROFILE": 80, "INSIDER": 70, "AUTONAME": 50}
+# Left out at Blake's request (11 October 2026): Meteora pool and pool-position
+# accounts, and every token creator wallet.
+EXCLUDE_NAME = re.compile(r"^Meteora\b", re.I)
 AUTO_NAME = re.compile(r"^(?:[A-Z][a-z]+){3}$")
 
 
@@ -86,6 +91,7 @@ def main(tokens_path, out_path):
     rows = {}
     big_holders = set()
     holdings = {}  # owner -> {"usd": float, "tokens": [symbols]}
+    creators = set()  # token creator wallets: left out of the list entirely
 
     def row(addr):
         return rows.setdefault(addr, {
@@ -115,19 +121,14 @@ def main(tokens_path, out_path):
         price = rep.get("price") or 0
         for addr, k in (rep.get("knownAccounts") or {}).items():
             typ = clean(k.get("type"), 20).upper() or "KNOWN"
-            if typ == "CREATOR":
-                continue  # handled below from the creator field
+            name = clean(k.get("name"))
+            if typ == "CREATOR" or EXCLUDE_NAME.match(name):
+                continue
             r = row(addr)
-            claim(r, typ, clean(k.get("name")), sym if typ in ("AMM", "LOCKER", "CLOB") else "RUGCHECK", "RUGCHECK")
+            claim(r, typ, name, sym if typ in ("AMM", "LOCKER", "CLOB") else "RUGCHECK", "RUGCHECK")
             seen(r, sym)
-        creator = rep.get("creator")
-        if creator:
-            r = row(creator)
-            claim(r, "CREATOR", f"Creator of {sym}" if sym else "Token creator", "", "CREATOR")
-            seen(r, sym)
-            if "creator" not in r["flags"]:
-                r["flags"].append("creator")
-            big_holders.add(creator)
+        if rep.get("creator"):
+            creators.add(rep["creator"])
         for h in rep.get("topHolders") or []:
             owner = h.get("owner")
             if not owner:
@@ -150,7 +151,9 @@ def main(tokens_path, out_path):
                 seen(r, sym)
         print(f"[{i+1}/{len(tokens)}] {sym}: ok", file=sys.stderr)
 
-    for j, w in enumerate(sorted(big_holders)):
+    for addr in creators:
+        rows.pop(addr, None)
+    for j, w in enumerate(sorted(big_holders - creators)):
         p = get(f"https://frontend-api-v3.pump.fun/users/{w}")
         time.sleep(0.25)
         name = clean((p or {}).get("username"), 40)
@@ -186,6 +189,9 @@ def main(tokens_path, out_path):
     json.dump(out, open(out_path, "w"), indent=1)
     cdir = os.path.join(os.path.dirname(out_path) or ".", "chunks")
     os.makedirs(cdir, exist_ok=True)
+    for old in os.listdir(cdir):
+        if old.startswith("auto-"):
+            os.remove(os.path.join(cdir, old))
     size = 250
     n = 0
     for n, start in enumerate(range(0, len(out), size)):
