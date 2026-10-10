@@ -17,13 +17,20 @@ holder wallet with at least 1% of a token, and keeps those that have a
 username. Names and profile text are written by strangers: they are stored
 as plain text and never followed.
 
+SOL balances: every labelled wallet's native SOL balance is read from a
+Solana RPC node (getMultipleAccounts, 100 wallets per call). The node is
+https://api.mainnet-beta.solana.com unless SOLANA_RPC_URL is set. If the node
+cannot be reached the labels are still written, without balances, and the
+page hides its SOL balance option. Only native SOL is counted: wrapped SOL
+held in token accounts (as liquidity pools hold it) is not included.
+
 Confidence is fixed per kind of evidence, not guessed per wallet:
   99 creator (on-chain record), 95 RugCheck named account,
   80 pump.fun profile (self-chosen name), 70 RugCheck insider heuristic,
   50 pump.fun profile whose name looks auto-generated (three joined words,
   e.g. "PewterLemonAct"; these are flagged "auto-name").
 """
-import json, re, sys, time, urllib.request, datetime
+import json, os, re, sys, time, urllib.request, datetime
 
 UA = {"User-Agent": "solana-label-db/1.0", "Accept": "application/json"}
 CONF = {"CREATOR": 99, "RUGCHECK": 95, "PROFILE": 80, "INSIDER": 70, "AUTONAME": 50}
@@ -40,6 +47,32 @@ def get(url):
                 return None
             time.sleep(2 * (attempt + 1))
     return None
+
+
+def sol_balances(addresses):
+    """Return {address: SOL} for the addresses, or None if the RPC node fails."""
+    url = os.environ.get("SOLANA_RPC_URL", "https://api.mainnet-beta.solana.com")
+    out = {}
+    for start in range(0, len(addresses), 100):
+        batch = addresses[start:start + 100]
+        body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "getMultipleAccounts",
+                           "params": [batch, {"encoding": "base64", "dataSlice": {"offset": 0, "length": 0}}]}).encode()
+        req = urllib.request.Request(url, data=body, headers={**UA, "Content-Type": "application/json"})
+        res = None
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    res = json.load(r)
+                break
+            except Exception as e:
+                print(f"RPC error: {e}", file=sys.stderr)
+                time.sleep(2 * (attempt + 1))
+        if not res or "result" not in res:
+            return None
+        for addr, acct in zip(batch, res["result"]["value"]):
+            out[addr] = round((acct or {}).get("lamports", 0) / 1e9, 4)
+        time.sleep(0.3)
+    return out
 
 
 def clean(s, n=60):
@@ -141,11 +174,16 @@ def main(tokens_path, out_path):
             for sym in hd["tokens"]:
                 if sym not in rows[addr]["tokens"]:
                     rows[addr]["tokens"].append(sym)
+    balances = sol_balances(list(rows))
+    if balances is None:
+        print("SOL balances skipped: RPC node unreachable", file=sys.stderr)
+    else:
+        for addr, sol in balances.items():
+            rows[addr]["sol_balance"] = sol
     out = sorted(rows.values(), key=lambda r: (-r["confidence"], r["label"]))
     for r in out:
         r["holdings_usd"] = round(r["holdings_usd"], 2)
     json.dump(out, open(out_path, "w"), indent=1)
-    import os
     cdir = os.path.join(os.path.dirname(out_path) or ".", "chunks")
     os.makedirs(cdir, exist_ok=True)
     size = 250
@@ -153,7 +191,8 @@ def main(tokens_path, out_path):
     for n, start in enumerate(range(0, len(out), size)):
         json.dump({"rows": out[start:start + size]}, open(os.path.join(cdir, f"auto-{n}.json"), "w"),
                   separators=(",", ":"))
-    json.dump({"updated_at": now, "tokens_scanned": len(tokens), "labels": len(out), "chunks": n + 1},
+    json.dump({"updated_at": now, "tokens_scanned": len(tokens), "labels": len(out), "chunks": n + 1,
+               "sol_checked_at": now if balances is not None else None},
               open(os.path.join(cdir, "meta.json"), "w"))
     print(f"{len(out)} labels written to {out_path}", file=sys.stderr)
 

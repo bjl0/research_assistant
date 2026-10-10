@@ -81,4 +81,6 @@ The old session's shell could not reach any of the data sites; a network policy 
 
 **Refreshing.** `python3 labels/build_labels.py data/tokens.json labels/labels.json` (needs direct network access to RugCheck and pump.fun; this session's shell has it). It writes `labels/chunks/*.json`; write those to `auto/*` and `meta/info` with one `ArtifactData` batch, pinned with `if_version`, and delete any leftover `auto-N` documents if the chunk count shrank. Never touch the `labels` collection.
 
+**SOL balances.** The script also reads each wallet's native SOL balance from a Solana RPC node (`SOLANA_RPC_URL`, default `https://api.mainnet-beta.solana.com`) and stores it as `sol_balance` on each row, with `sol_checked_at` in `meta/info`. The page's SOL BALANCE button stays greyed out until rows carry balances. As of 10 October 2026 this environment's network policy blocks every Solana RPC host tried (403 from the proxy), so balances are not yet collected; Blake needs to add the RPC host to the environment's allowed domains, then rerun the refresh.
+
 **Confidence** is fixed by evidence type (99 creator, 95 RugCheck-named account, 80 pump.fun profile, 70 RugCheck insider, 50 auto-generated-looking pump.fun name). "Tracked $" only counts holdings in the screener's tokens. The page links only to pump.fun profiles.
