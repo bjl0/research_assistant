@@ -8,12 +8,14 @@ files are the documents for the wallet label page's `auto` collection;
 labels people add on the page live in its `labels` collection and are never
 touched by this script.
 
-For each token mint it downloads the RugCheck report and collects:
-  - accounts RugCheck names itself (AMM pools, lockers, exchanges ...),
-    except Meteora pools and pool positions
-  - large holders RugCheck marks as insiders
-Token creator wallets are left out entirely, even if they also hold a
-token or have a pump.fun profile.
+The list holds individual trader wallets only (Blake's request, 10 October
+2026). For each token mint it downloads the RugCheck report and collects
+large holders RugCheck marks as insiders. Left out entirely:
+  - every account RugCheck names itself (pools of any venue, bonding
+    curves, liquidity lockers, order-book markets, ...), the token's market
+    accounts and its liquidity locker owners
+  - token creator wallets, even if they also hold a token or have a
+    pump.fun profile
 Then it looks up the pump.fun profile behind every
 holder wallet with at least 1% of a token, and keeps those that have a
 username. Names and profile text are written by strangers: they are stored
@@ -27,7 +29,6 @@ page hides its SOL balance option. Only native SOL is counted: wrapped SOL
 held in token accounts (as liquidity pools hold it) is not included.
 
 Confidence is fixed per kind of evidence, not guessed per wallet:
-  95 RugCheck named account,
   80 pump.fun profile (self-chosen name), 70 RugCheck insider heuristic,
   50 pump.fun profile whose name looks auto-generated (three joined words,
   e.g. "PewterLemonAct"; these are flagged "auto-name").
@@ -35,10 +36,7 @@ Confidence is fixed per kind of evidence, not guessed per wallet:
 import json, os, re, sys, time, urllib.request, datetime
 
 UA = {"User-Agent": "solana-label-db/1.0", "Accept": "application/json"}
-CONF = {"RUGCHECK": 95, "PROFILE": 80, "INSIDER": 70, "AUTONAME": 50}
-# Left out at Blake's request (10 October 2026): Meteora pool and pool-position
-# accounts, and every token creator wallet.
-EXCLUDE_NAME = re.compile(r"^Meteora\b", re.I)
+CONF = {"PROFILE": 80, "INSIDER": 70, "AUTONAME": 50}
 AUTO_NAME = re.compile(r"^(?:[A-Z][a-z]+){3}$")
 
 
@@ -91,7 +89,7 @@ def main(tokens_path, out_path):
     rows = {}
     big_holders = set()
     holdings = {}  # owner -> {"usd": float, "tokens": [symbols]}
-    creators = set()  # token creator wallets: left out of the list entirely
+    excluded = set()  # creators, pools, lockers, markets: not trader wallets
 
     def row(addr):
         return rows.setdefault(addr, {
@@ -119,16 +117,12 @@ def main(tokens_path, out_path):
             print(f"[{i+1}/{len(tokens)}] {sym}: no report", file=sys.stderr)
             continue
         price = rep.get("price") or 0
-        for addr, k in (rep.get("knownAccounts") or {}).items():
-            typ = clean(k.get("type"), 20).upper() or "KNOWN"
-            name = clean(k.get("name"))
-            if typ == "CREATOR" or EXCLUDE_NAME.match(name):
-                continue
-            r = row(addr)
-            claim(r, typ, name, sym if typ in ("AMM", "LOCKER", "CLOB") else "RUGCHECK", "RUGCHECK")
-            seen(r, sym)
+        excluded.update(rep.get("knownAccounts") or {})
+        excluded.update(m["pubkey"] for m in rep.get("markets") or [] if m.get("pubkey"))
+        if isinstance(rep.get("lockerOwners"), dict):
+            excluded.update(rep["lockerOwners"])
         if rep.get("creator"):
-            creators.add(rep["creator"])
+            excluded.add(rep["creator"])
         for h in rep.get("topHolders") or []:
             owner = h.get("owner")
             if not owner:
@@ -151,9 +145,9 @@ def main(tokens_path, out_path):
                 seen(r, sym)
         print(f"[{i+1}/{len(tokens)}] {sym}: ok", file=sys.stderr)
 
-    for addr in creators:
+    for addr in excluded:
         rows.pop(addr, None)
-    for j, w in enumerate(sorted(big_holders - creators)):
+    for j, w in enumerate(sorted(big_holders - excluded)):
         p = get(f"https://frontend-api-v3.pump.fun/users/{w}")
         time.sleep(0.25)
         name = clean((p or {}).get("username"), 40)

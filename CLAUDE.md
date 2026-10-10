@@ -83,6 +83,6 @@ The old session's shell could not reach any of the data sites; a network policy 
 
 **SOL balances.** The script also reads each wallet's native SOL balance from a Solana RPC node (`SOLANA_RPC_URL`, default `https://api.mainnet-beta.solana.com`) and stores it as `sol_balance` on each row, with `sol_checked_at` in `meta/info`. The page's SOL BALANCE button stays greyed out until rows carry balances. As of 10 October 2026 this environment's network policy blocks every Solana RPC host tried (403 from the proxy), so balances are not yet collected; Blake needs to add the RPC host to the environment's allowed domains, then rerun the refresh.
 
-**Excluded** (Blake, 10 October 2026): Meteora pool and pool-position accounts, and all token creator wallets, are left out of the automatic list by `build_labels.py`.
+**Trader wallets only** (Blake, 10 October 2026): the automatic list holds individual trader wallets. `build_labels.py` leaves out every account RugCheck names (pools of any venue, bonding curves, lockers, order-book markets), each token's market accounts and locker owners, and all token creator wallets. What remains are large holders with a pump.fun profile and RugCheck insiders.
 
-**Confidence** is fixed by evidence type (95 RugCheck-named account, 80 pump.fun profile, 70 RugCheck insider, 50 auto-generated-looking pump.fun name). "Tracked $" only counts holdings in the screener's tokens. The page links only to pump.fun profiles.
+**Confidence** is fixed by evidence type (80 pump.fun profile, 70 RugCheck insider, 50 auto-generated-looking pump.fun name). "Tracked $" only counts holdings in the screener's tokens. The page links only to pump.fun profiles.
