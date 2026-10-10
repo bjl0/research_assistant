@@ -36,7 +36,7 @@ import json, os, re, sys, time, urllib.request, datetime
 
 UA = {"User-Agent": "solana-label-db/1.0", "Accept": "application/json"}
 CONF = {"RUGCHECK": 95, "PROFILE": 80, "INSIDER": 70, "AUTONAME": 50}
-# Left out at Blake's request (11 October 2026): Meteora pool and pool-position
+# Left out at Blake's request (10 October 2026): Meteora pool and pool-position
 # accounts, and every token creator wallet.
 EXCLUDE_NAME = re.compile(r"^Meteora\b", re.I)
 AUTO_NAME = re.compile(r"^(?:[A-Z][a-z]+){3}$")
