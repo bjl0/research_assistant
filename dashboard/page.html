@@ -1,0 +1,612 @@
+<style>
+.ls-page{display:flex;flex-direction:column;gap:var(--cds-gap-lg);font-family:var(--font-anthropic-sans);font-size:var(--cds-font-size-body);color:var(--color-fg);font-variant-numeric:tabular-nums}
+.ls-head{display:flex;flex-direction:column;gap:var(--cds-gap-xs)}
+.ls-title{margin:0;font-family:var(--font-anthropic-serif);font-weight:400;font-size:var(--cds-font-size-title);text-wrap:balance}
+.ls-takeaway{margin:0;font-size:var(--cds-font-size-heading);max-width:65ch}
+.ls-asof{margin:0;color:var(--color-fg-muted);font-size:var(--cds-font-size-caption);max-width:75ch}
+.ls-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,10rem),1fr));gap:var(--cds-gap-md)}
+.ls-tile{background:var(--color-panel);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:var(--cds-pad-lg);display:flex;flex-direction:column;gap:var(--cds-gap-xs);min-width:0}
+.ls-tile-n{font-family:var(--font-anthropic-serif);font-weight:400;font-size:var(--cds-font-size-title);line-height:1.1;min-height:1.1em}
+.ls-tile-l{color:var(--color-fg-muted);font-size:var(--cds-font-size-caption)}
+.ls-card{background:var(--color-panel);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:var(--cds-pad-lg);display:flex;flex-direction:column;gap:var(--cds-gap-md);min-width:0}
+.ls-card-head{display:flex;flex-direction:column;gap:var(--cds-gap-xs)}
+.ls-h2{margin:0;font-size:var(--cds-font-size-heading);font-weight:var(--cds-font-weight-medium)}
+.ls-note{margin:0;color:var(--color-fg-muted);font-size:var(--cds-font-size-caption);max-width:75ch}
+.ls-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,10.5rem),1fr));gap:var(--cds-gap-md);align-items:end}
+.ls-field{display:flex;flex-direction:column;gap:var(--cds-gap-xs);font-size:var(--cds-font-size-caption);color:var(--color-fg-muted);min-width:0}
+.ls-num{font:inherit;font-size:var(--cds-font-size-body);color:var(--color-fg);background:var(--color-bg);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:var(--cds-pad-xs) var(--cds-pad-sm);width:100%;box-sizing:border-box}
+.ls-num:focus-visible,.ls-btn:focus-visible,.ls-sort:focus-visible,.ls-link:focus-visible{outline:2px solid var(--color-fg);outline-offset:2px}
+.ls-row{display:flex;flex-wrap:wrap;gap:var(--cds-gap-md);align-items:center;justify-content:space-between}
+.ls-check{display:flex;gap:var(--cds-gap-sm);align-items:center;font-size:var(--cds-font-size-body)}
+.ls-btn{font:inherit;font-size:var(--cds-font-size-caption);color:var(--color-fg);background:var(--color-bg);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:var(--cds-pad-xs) var(--cds-pad-sm);cursor:pointer}
+.ls-btn[aria-pressed="true"]{border-color:var(--color-fg);font-weight:var(--cds-font-weight-medium)}
+.ls-views{display:flex;flex-wrap:wrap;gap:var(--cds-gap-xs)}
+.ls-alerts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,21rem),1fr));gap:var(--cds-gap-md)}
+.ls-alert{background:var(--color-bg);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:var(--cds-pad-md);display:flex;flex-direction:column;gap:var(--cds-gap-sm);min-width:0}
+.ls-alert-top{display:flex;flex-wrap:wrap;gap:var(--cds-gap-sm);align-items:baseline;justify-content:space-between}
+.ls-alert-name{display:flex;flex-wrap:wrap;gap:var(--cds-gap-sm);align-items:baseline;min-width:0}
+.ls-alert-sym{font-size:var(--cds-font-size-heading);font-weight:var(--cds-font-weight-medium)}
+.ls-alert-sub{color:var(--color-fg-muted);font-size:var(--cds-font-size-caption);overflow-wrap:anywhere}
+.ls-chips{display:flex;flex-wrap:wrap;gap:var(--cds-gap-xs);font-size:var(--cds-font-size-caption)}
+.ls-chip{border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:0 var(--cds-pad-sm);color:var(--color-fg-muted);overflow-wrap:anywhere}
+.ls-links{display:flex;flex-wrap:wrap;gap:var(--cds-gap-md);font-size:var(--cds-font-size-caption)}
+.ls-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--cds-gap-sm);border-block:1px solid var(--color-border-line);padding-block:var(--cds-pad-sm)}
+.ls-stat{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ls-stat-l{color:var(--color-fg-muted);font-size:var(--cds-font-size-caption)}
+.ls-stat-v{font-family:var(--font-anthropic-serif);font-size:var(--cds-font-size-heading);overflow-wrap:anywhere}
+.ls-up{color:var(--color-ok)}
+.ls-down{color:var(--color-bad)}
+.ls-alert-foot{display:flex;flex-wrap:wrap;gap:var(--cds-gap-sm);align-items:center;justify-content:space-between;font-size:var(--cds-font-size-caption);color:var(--color-fg-muted)}
+.ls-chart{position:relative;min-height:300px}
+.ls-chart svg{display:block}
+.ls-tick{fill:var(--color-fg-muted);font-size:var(--cds-font-size-caption)}
+.ls-dotlabel{fill:var(--color-fg);font-size:var(--cds-font-size-caption)}
+.ls-tip{position:absolute;pointer-events:none;background:var(--cds-surface-popover);border:1px solid var(--cds-border);border-radius:var(--cds-radius);box-shadow:var(--cds-shadow-popover);padding:var(--cds-pad-xs) var(--cds-pad-sm);font-size:var(--cds-font-size-caption);max-width:16rem;z-index:2}
+.ls-tip-h{color:var(--cds-text-secondary)}
+.ls-tablebox{overflow:auto;max-height:34rem;border:1px solid var(--color-border-line);border-radius:var(--cds-radius)}
+.ls-table{border-collapse:collapse;width:100%;font-size:var(--cds-font-size-caption)}
+.ls-table th,.ls-table td{padding:var(--cds-pad-xs) var(--cds-pad-sm);text-align:right;white-space:nowrap;border-bottom:1px solid var(--color-border-line)}
+.ls-table th{position:sticky;top:0;background:var(--color-panel);font-weight:var(--cds-font-weight-medium);z-index:1}
+.ls-table .ls-l{text-align:left}
+.ls-table td.ls-wrap{white-space:normal;min-width:14rem;max-width:22rem}
+.ls-sort{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;font-weight:inherit}
+.ls-link{color:var(--color-fg);text-decoration:underline;text-underline-offset:2px}
+.ls-pill{display:inline-block;border:1px solid currentColor;border-radius:999px;padding:0 var(--cds-pad-sm);white-space:nowrap;font-size:var(--cds-font-size-caption)}
+.ls-pill.ls-ok{color:var(--color-ok)}
+.ls-pill.ls-warn{color:var(--color-warn)}
+.ls-pill.ls-off{color:var(--color-fg-muted);white-space:normal}
+.ls-pill.ls-bad{color:var(--color-bad)}
+.ls-empty{text-align:left !important;color:var(--color-fg-muted);white-space:normal !important}
+.ls-fail{display:flex;align-items:center;justify-content:center;gap:var(--cds-gap-sm);color:var(--color-fg-muted);font-size:var(--cds-font-size-caption);min-height:300px}
+.ls-fail-dot{width:.375rem;height:.375rem;border-radius:50%;background:var(--color-bad)}
+.ls-list{margin:0;padding-left:1.1rem;display:flex;flex-direction:column;gap:var(--cds-gap-xs);max-width:75ch}
+.ls-two{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,20rem),1fr));gap:var(--cds-gap-lg)}
+.ls-page [data-dash-source-state=refreshing]{opacity:.5;transition:opacity var(--cds-dur-slow)}
+</style>
+
+<div class="ls-page">
+  <header class="ls-head" id="summary">
+    <h1 class="ls-title">Solana launch screener</h1>
+    <p class="ls-takeaway dash-skeleton" id="takeaway" data-source="tokens alerts">—</p>
+    <p class="ls-asof">Last run <span id="as-of" data-source="tokens" data-field="as_of" data-row="0">—</span>. A scheduled run refreshes this page about once an hour, so prices here can be up to an hour old and new launches move within minutes. It reports measurements against your limits; it is not advice to buy or sell.</p>
+  </header>
+
+  <div class="ls-tiles" id="funnel">
+    <div class="ls-tile"><div class="ls-tile-n dash-skeleton" data-source="screen_counts" data-field="screened" data-row="0">—</div><div class="ls-tile-l">Tokens screened in the last run</div></div>
+    <div class="ls-tile"><div class="ls-tile-n dash-skeleton" data-source="screen_counts" data-field="holder_checked" data-row="0">—</div><div class="ls-tile-l">Passed the market limits and got holder checks</div></div>
+    <div class="ls-tile"><div class="ls-tile-n dash-skeleton" id="n-match" data-source="tokens">—</div><div class="ls-tile-l">Meet every limit on screen now</div></div>
+    <div class="ls-tile"><div class="ls-tile-n dash-skeleton" data-source="alert_counts" data-field="new_this_run" data-row="0">—</div><div class="ls-tile-l">New alerts in the last run</div></div>
+    <div class="ls-tile"><div class="ls-tile-n dash-skeleton" data-source="alert_counts" data-field="alerts" data-row="0">—</div><div class="ls-tile-l">Tokens alerted so far</div></div>
+  </div>
+
+  <section class="ls-card" id="alerts">
+    <div class="ls-card-head">
+      <h2 class="ls-h2">Alerts</h2>
+      <p class="ls-note">A token gets an alert the first time an hourly run finds it meeting your saved strategy. Each later run re-prices it and counts another trigger if it still qualifies. Market cap change is measured from the first alert.</p>
+    </div>
+    <div class="ls-views" id="alert-views">
+      <button class="ls-btn" type="button" data-alert-view="all">All</button>
+      <button class="ls-btn" type="button" data-alert-view="new">New in the last run</button>
+      <button class="ls-btn" type="button" data-alert-view="meets">Still meets strategy</button>
+      <button class="ls-btn" type="button" data-alert-view="open" id="alert-view-open" hidden>Not acted on</button>
+    </div>
+    <div class="ls-alerts dash-skeleton" id="alert-cards" data-source="alerts"></div>
+  </section>
+
+  <section class="ls-card" id="strategy">
+    <div class="ls-card-head">
+      <h2 class="ls-h2">Your strategy</h2>
+      <p class="ls-note">Change any limit and the chart and table below update at once. Alerts use the saved values, which are the ones Reset returns to; ask Claude to save different ones. The starting values are cautious guesses for new launches, not tested rules.</p>
+    </div>
+    <div class="ls-controls">
+      <label class="ls-field"><span>Oldest allowed (days)</span><input class="ls-num" id="f-max-age" type="number" min="0" step="1" data-param="max_age_days"></label>
+      <label class="ls-field"><span>Least liquidity (USD)</span><input class="ls-num" id="f-min-liq" type="number" min="0" step="1000" data-param="min_liq"></label>
+      <label class="ls-field"><span>Least 24h volume (USD)</span><input class="ls-num" id="f-min-vol" type="number" min="0" step="1000" data-param="min_vol"></label>
+      <label class="ls-field"><span>Fewest holders</span><input class="ls-num" id="f-min-holders" type="number" min="0" step="50" data-param="min_holders"></label>
+      <label class="ls-field"><span>Most held by top-10 wallets (%)</span><input class="ls-num" id="f-max-top10" type="number" min="0" max="100" step="1" data-param="max_top10"></label>
+      <label class="ls-field"><span>Most held by one wallet (%)</span><input class="ls-num" id="f-max-wallet" type="number" min="0" max="100" step="1" data-param="max_wallet"></label>
+      <label class="ls-field"><span>Least locked liquidity (%)</span><input class="ls-num" id="f-min-locked" type="number" min="0" max="100" step="5" data-param="min_locked"></label>
+    </div>
+    <div class="ls-row">
+      <label class="ls-check"><input id="f-no-danger" type="checkbox"><span>Leave out tokens RugCheck marks as danger</span></label>
+      <button class="ls-btn" id="f-reset" type="button">Reset to saved values</button>
+    </div>
+  </section>
+
+  <section class="ls-card" id="map">
+    <div class="ls-card-head">
+      <h2 class="ls-h2">Liquidity against holder concentration</h2>
+      <p class="ls-note">Each dot is a holder-checked token from the last run. Further right means a deeper pool; lower means supply is spread across more wallets. Dashed lines are your limits, and named dots meet every limit.</p>
+    </div>
+    <div class="ls-chart dash-skeleton" id="map-chart" data-source="tokens"></div>
+  </section>
+
+  <section class="ls-card" id="tokens">
+    <div class="ls-card-head">
+      <h2 class="ls-h2">Tokens in the last run</h2>
+      <p class="ls-note">Select a column heading to sort. Links open the token on DEX Screener, on pump.fun where it trades there, and on X where its team listed a link. Names, symbols, X links and wallet profile names are written by the people behind them.</p>
+    </div>
+    <div class="ls-views" id="views">
+      <button class="ls-btn" type="button" data-view="matches">Meet strategy</button>
+      <button class="ls-btn" type="button" data-view="near">Miss by one</button>
+      <button class="ls-btn" type="button" data-view="checked">All holder-checked</button>
+      <button class="ls-btn" type="button" data-view="all">Everything screened</button>
+    </div>
+    <div class="ls-tablebox">
+      <table class="ls-table" id="token-table" data-source="tokens" data-row-key="mint">
+        <thead><tr>
+          <th class="ls-l">Result</th>
+          <th class="ls-l" data-field="symbol"><button class="ls-sort" type="button" data-sort="symbol">Token</button></th>
+          <th class="ls-l" data-field="name">Name</th>
+          <th class="ls-l">Links</th>
+          <th data-field="age"><button class="ls-sort" type="button" data-sort="age_hours">Age</button></th>
+          <th data-field="liquidity_usd"><button class="ls-sort" type="button" data-sort="liquidity_usd">Liquidity</button></th>
+          <th data-field="market_cap_usd"><button class="ls-sort" type="button" data-sort="market_cap_usd">Market cap</button></th>
+          <th data-field="volume_24h_usd"><button class="ls-sort" type="button" data-sort="volume_24h_usd">24h volume</button></th>
+          <th data-field="vol_to_liq"><button class="ls-sort" type="button" data-sort="vol_to_liq">Volume ÷ liquidity</button></th>
+          <th data-field="buy_share_pct"><button class="ls-sort" type="button" data-sort="buy_share_pct">Buys, share of 24h trades</button></th>
+          <th data-field="holders"><button class="ls-sort" type="button" data-sort="holders">Holders</button></th>
+          <th data-field="top10_wallets_pct"><button class="ls-sort" type="button" data-sort="top10_wallets_pct">Top-10 wallets</button></th>
+          <th data-field="largest_wallet_pct"><button class="ls-sort" type="button" data-sort="largest_wallet_pct">Largest wallet</button></th>
+          <th data-field="locked_lp_pct"><button class="ls-sort" type="button" data-sort="locked_lp_pct">Locked liquidity</button></th>
+          <th class="ls-l" data-field="flags">Flags to read</th>
+          <th class="ls-l" data-field="identified_holders">Identified holders</th>
+        </tr></thead>
+        <tbody id="token-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="ls-card" id="notes">
+    <div class="ls-two">
+      <div class="ls-card-head">
+        <h2 class="ls-h2">What the figures mean</h2>
+        <ul class="ls-list">
+          <li><b>Age</b> counts from when the token or its pool was first seen, whichever is earlier.</li>
+          <li><b>Top-10 wallets</b> is the share of supply held by the ten largest holders, leaving out liquidity pools and token lockers.</li>
+          <li><b>Largest wallet</b> is the biggest single holder that is not a pool or locker. It can be the creator.</li>
+          <li><b>Locked liquidity</b> is the share of pooled liquidity RugCheck counts as locked or burned.</li>
+          <li><b>Identified holders</b> are pools, lockers and the creator as RugCheck labels them, plus the pump.fun profile name of large wallets where one exists. A profile name is a self-chosen handle, not a verified identity.</li>
+          <li><b>X links</b> are whatever the token's team listed on DEX Screener. One marked "X post" or "X community" is not the token's own account, and a listed post can belong to someone unrelated.</li>
+          <li><b>Linked wallets</b> are wallets RugCheck's network analysis ties together. A flag appears from twenty.</li>
+          <li><b>Near-identical amounts</b> means five or more top wallets within three percent of each other, which can be one buyer split across wallets.</li>
+        </ul>
+      </div>
+      <div class="ls-card-head">
+        <h2 class="ls-h2">Limits of this screen</h2>
+        <ul class="ls-list">
+          <li>Candidates come from tokens whose teams filled in a DEX Screener profile or paid for a boost. That is what is being marketed, not the whole market.</li>
+          <li>Holder checks run only on tokens that pass the saved age, liquidity and volume limits, and never below $10,000 of pooled liquidity. The rest show "Not checked" and cannot meet the strategy.</li>
+          <li>Wallet names are looked up for holders of at least one percent, a few per run, so new alerts fill in over the next runs.</li>
+          <li>Holder data covers the largest holders only. It cannot tell when one person spreads supply across many wallets.</li>
+          <li>Alerts arrive hourly at best. A launch can rise and collapse between two runs.</li>
+          <li>Market data is from DEX Screener, holder and safety data from RugCheck, profile names from pump.fun.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const DEFAULTS = {max_age_days: 7, min_liq: 10000, min_vol: 10000, min_holders: 500, max_top10: 30, max_wallet: 10, min_locked: 90, no_danger: true, view: 'matches', alert_view: 'all'};
+const usd = d3.format('$,.0f'), int = d3.format(','), one = d3.format('.1f'), signed = d3.format('+,.1f');
+const pct = (v) => one(v) + '%';
+const dashIfNull = (v, f) => (v == null ? '—' : f(v));
+const when = (s) => new Intl.DateTimeFormat('en', {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'}).format(new Date(s));
+
+dash.calc('screen_counts', {
+  inputs: ['tokens'],
+  title: 'Tokens screened',
+  description: 'How many tokens the last run screened, and how many of those got holder checks.',
+  fn: (tokens) => [{screened: tokens.length, holder_checked: tokens.filter((t) => t.holder_check === 'Checked').length}],
+});
+dash.calc('alert_counts', {
+  inputs: ['alerts'],
+  title: 'Alert counts',
+  description: 'How many tokens have been alerted so far, and how many got their first alert in the last run.',
+  fn: (alerts) => [{alerts: alerts.length, new_this_run: alerts.filter((a) => a.is_new).length}],
+});
+
+const params = () => {
+  const p = {...DEFAULTS, ...dash.params()};
+  for (const k of ['max_age_days', 'min_liq', 'min_vol', 'min_holders', 'max_top10', 'max_wallet', 'min_locked']) {
+    const n = Number(p[k]);
+    p[k] = Number.isFinite(n) ? n : DEFAULTS[k];
+  }
+  p.no_danger = p.no_danger !== false;
+  if (!['matches', 'near', 'checked', 'all'].includes(p.view)) p.view = 'matches';
+  if (!['all', 'new', 'meets', 'open'].includes(p.alert_view)) p.alert_view = 'all';
+  return p;
+};
+
+const failsOf = (t, p) => {
+  const f = [];
+  if (t.age_hours > p.max_age_days * 24) f.push('age');
+  if (t.liquidity_usd == null || t.liquidity_usd < p.min_liq) f.push('liquidity');
+  if (t.volume_24h_usd < p.min_vol) f.push('24h volume');
+  if (t.holder_check !== 'Checked') { f.push('holders not checked'); return f; }
+  if (t.holders < p.min_holders) f.push('holder count');
+  if (t.top10_wallets_pct > p.max_top10) f.push('top-10 wallets');
+  if (t.largest_wallet_pct > p.max_wallet) f.push('largest wallet');
+  if (t.locked_lp_pct == null || t.locked_lp_pct < p.min_locked) f.push('locked liquidity');
+  if (p.no_danger && t.danger) f.push('danger flag');
+  return f;
+};
+
+let sortKey = 'liquidity_usd', sortDir = -1;
+
+// "Acted on" marks are saved per viewer where this view allows it; without that the control stays hidden.
+let store = null, acted = {};
+const capability = async (name) => {
+  const c = globalThis.claude;
+  if (!c) return null;
+  if (c[name]) return c[name];
+  if (typeof c.use !== 'function') return null;
+  const got = await c.use(name);
+  return got && got.available === false ? null : got;
+};
+(async () => {
+  try {
+    const [db, user] = await Promise.all([capability('db'), capability('user')]);
+    if (!db || !user || typeof db.doc !== 'function' || typeof user.id !== 'function') return;
+    const uid = await user.id();
+    if (!uid) return;
+    const ref = db.doc('data/users/' + uid + '/screener');
+    const snap = await ref.get();
+    const saved = snap && snap.exists ? snap.data() : null;
+    acted = saved && saved.acted && typeof saved.acted === 'object' ? {...saved.acted} : {};
+    store = ref;
+    draw();
+  } catch (e) {
+    store = null;
+  }
+})();
+const toggleActed = async (mint) => {
+  if (!store) return;
+  const before = {...acted};
+  if (acted[mint]) delete acted[mint]; else acted[mint] = true;
+  draw();
+  try {
+    await store.set({acted});
+  } catch (e) {
+    acted = before;
+    store = null;
+    draw();
+  }
+};
+
+// controls
+const numInputs = Array.from(document.querySelectorAll('.ls-num'));
+for (const el of numInputs) {
+  el.addEventListener('change', () => {
+    const n = Number(el.value);
+    if (el.value !== '' && Number.isFinite(n) && n >= 0) dash.setParams({[el.dataset.param]: n});
+  });
+}
+const danger = $('#f-no-danger');
+danger.addEventListener('change', () => dash.setParams({no_danger: danger.checked}));
+$('#f-reset').addEventListener('click', () => dash.resetParams());
+$('#views').addEventListener('click', (event) => {
+  const b = event.target.closest('button[data-view]');
+  if (b) dash.setParams({view: b.dataset.view});
+});
+$('#alert-views').addEventListener('click', (event) => {
+  const b = event.target.closest('button[data-alert-view]');
+  if (b) dash.setParams({alert_view: b.dataset.alertView});
+});
+$('#alert-cards').addEventListener('click', (event) => {
+  const b = event.target.closest('button[data-acted]');
+  if (b) toggleActed(b.dataset.acted);
+});
+$('#token-table').addEventListener('click', (event) => {
+  const b = event.target.closest('button[data-sort]');
+  if (!b) return;
+  if (sortKey === b.dataset.sort) sortDir = -sortDir;
+  else { sortKey = b.dataset.sort; sortDir = b.dataset.sort === 'symbol' ? 1 : -1; }
+  draw();
+});
+
+const el = (tag, cls, text) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+};
+const cell = (text, cls) => el('td', cls, text);
+const tokenLink = (mint, text, cls) => {
+  const a = el('a', cls, text);
+  a.href = 'https://dexscreener.com/solana/' + encodeURIComponent(mint);
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  return a;
+};
+// outside links are built only from addresses on the three expected sites
+const safeUrl = (u, starts) => (typeof u === 'string' && starts.some((s) => u.startsWith(s)) ? u : null);
+const extLink = (href, text) => {
+  const a = el('a', 'ls-link', text);
+  a.href = href;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  return a;
+};
+const linksFor = (r, short) => {
+  const out = [extLink(safeUrl(r.dexscreener_url, ['https://dexscreener.com/']) || 'https://dexscreener.com/solana/' + encodeURIComponent(r.mint), short ? 'DEX' : 'DEX Screener')];
+  const pump = safeUrl(r.pumpfun_url, ['https://pump.fun/']);
+  if (pump) out.push(extLink(pump, 'pump.fun'));
+  const x = safeUrl(r.x_url, ['https://x.com/', 'https://twitter.com/']);
+  if (x) out.push(extLink(x, short ? 'X' : (r.x_kind || 'X')));
+  return out;
+};
+// a value drawn from one alert row, marked so its source can be opened
+const mark = (node, a, field) => {
+  node.setAttribute('data-source', 'alerts');
+  node.setAttribute('data-field', field);
+  node.setAttribute('data-where', 'mint=' + encodeURIComponent(a.mint));
+  return node;
+};
+
+const resultPill = (t, fails) => {
+  if (!fails.length) return el('span', 'ls-pill ' + (t.flags ? 'ls-warn' : 'ls-ok'), t.flags ? 'Meets all, read flags' : 'Meets all');
+  if (t.holder_check !== 'Checked') return el('span', 'ls-pill ls-off', 'Not checked');
+  return el('span', 'ls-pill ' + (fails.includes('danger flag') ? 'ls-bad' : 'ls-off'), 'Misses: ' + fails.join(', '));
+};
+
+const drawAlerts = (src, p) => {
+  const box = $('#alert-cards');
+  $('#alert-view-open').hidden = !store;
+  for (const b of document.querySelectorAll('#alert-views button')) b.setAttribute('aria-pressed', String(b.dataset.alertView === p.alert_view));
+  box.replaceChildren();
+  if (src.status !== 'ok') {
+    if (src.status === 'error') {
+      const f = el('div', 'ls-fail');
+      f.append(el('span', 'ls-fail-dot'), el('span', null, 'Failed to load'));
+      box.append(f);
+    }
+    return;
+  }
+  let rows = src.data.slice();
+  if (p.alert_view === 'new') rows = rows.filter((a) => a.is_new);
+  if (p.alert_view === 'meets') rows = rows.filter((a) => a.now === 'Meets strategy');
+  if (p.alert_view === 'open') rows = rows.filter((a) => !acted[a.mint]);
+  rows.sort((a, b) => (b.is_new ? 1 : 0) - (a.is_new ? 1 : 0) || String(b.first_alert_at).localeCompare(String(a.first_alert_at)) || (b.change_since_first_pct ?? -1e9) - (a.change_since_first_pct ?? -1e9));
+  if (!rows.length) {
+    box.append(el('p', 'ls-note', src.data.length ? 'No alerts in this view.' : 'No token has met your saved strategy yet. The next hourly run will check again.'));
+    return;
+  }
+  for (const a of rows) {
+    const card = el('article', 'ls-alert');
+    const top = el('div', 'ls-alert-top');
+    const name = el('div', 'ls-alert-name');
+    name.append(tokenLink(a.mint, a.symbol, 'ls-link ls-alert-sym'), mark(el('span', 'ls-alert-sub', a.name), a, 'name'));
+    const state = el('div', 'ls-chips');
+    if (a.is_new) state.append(el('span', 'ls-pill ls-ok', 'New'));
+    state.append(mark(el('span', 'ls-pill ' + (a.now === 'Meets strategy' ? 'ls-ok' : 'ls-off'), a.now || 'Not in the last run'), a, 'now'));
+    top.append(name, state);
+
+    const chips = el('div', 'ls-chips');
+    const trig = el('span', 'ls-chip');
+    trig.append(mark(el('span', null, int(a.triggers)), a, 'triggers'), document.createTextNode(a.triggers === 1 ? ' trigger' : ' triggers'));
+    const first = el('span', 'ls-chip');
+    first.append(document.createTextNode('First alert '), mark(el('span', null, when(a.first_alert_at)), a, 'first_alert_at'));
+    const age = el('span', 'ls-chip');
+    age.append(mark(el('span', null, a.first_alert_age || '—'), a, 'first_alert_age'), document.createTextNode(' old at first alert'));
+    chips.append(trig, first, age);
+    const links = el('div', 'ls-links');
+    links.append(...linksFor(a, false));
+
+    const stats = el('div', 'ls-stats');
+    const stat = (label, node, sub) => {
+      const s = el('div', 'ls-stat');
+      s.append(el('span', 'ls-stat-l', label), node);
+      if (sub) s.append(sub);
+      return s;
+    };
+    const change = a.change_since_first_pct;
+    const priced = el('span', 'ls-stat-l');
+    priced.append(document.createTextNode('Priced '), mark(el('span', null, a.latest_cap_at ? when(a.latest_cap_at) : '—'), a, 'latest_cap_at'));
+    stats.append(
+      stat('First alert cap', mark(el('span', 'ls-stat-v', dashIfNull(a.first_alert_cap_usd, usd)), a, 'first_alert_cap_usd')),
+      stat('Latest cap', mark(el('span', 'ls-stat-v', dashIfNull(a.latest_cap_usd, usd)), a, 'latest_cap_usd'), priced),
+      stat('Cap since first alert', mark(el('span', 'ls-stat-v ' + (change == null ? '' : change >= 0 ? 'ls-up' : 'ls-down'), dashIfNull(change, (v) => signed(v) + '%')), a, 'change_since_first_pct')),
+    );
+
+    const holders = el('div', 'ls-chips');
+    for (const h of String(a.identified_holders || '').split(' · ').filter(Boolean)) holders.append(el('span', 'ls-chip', h));
+    if (!holders.childNodes.length) holders.append(el('span', 'ls-chip', 'No holders identified yet'));
+    holders.setAttribute('data-source', 'alerts');
+
+    card.append(top, chips, links, stats, el('span', 'ls-stat-l', 'Identified holders'), holders);
+    if (a.flags) {
+      const fl = el('p', 'ls-note');
+      fl.append(document.createTextNode('Flags: '), mark(el('span', null, a.flags), a, 'flags'));
+      card.append(fl);
+    }
+    const foot = el('div', 'ls-alert-foot');
+    foot.append(mark(el('span', null, a.identity_checks || ''), a, 'identity_checks'));
+    if (store) {
+      const b = el('button', 'ls-btn', acted[a.mint] ? 'Acted on' : 'Not acted on');
+      b.type = 'button';
+      b.dataset.acted = a.mint;
+      b.setAttribute('aria-pressed', String(Boolean(acted[a.mint])));
+      foot.append(b);
+    }
+    card.append(foot);
+    box.append(card);
+  }
+};
+
+const drawTable = (rows, p) => {
+  const body = $('#token-rows');
+  const sorted = rows.slice().sort((a, b) => {
+    const x = a.t[sortKey], y = b.t[sortKey];
+    if (x == null && y == null) return 0;
+    if (x == null) return 1;
+    if (y == null) return -1;
+    if (typeof x === 'string') return sortDir * x.localeCompare(y);
+    return sortDir * (x - y);
+  });
+  for (const b of document.querySelectorAll('.ls-sort')) {
+    const th = b.closest('th');
+    if (b.dataset.sort === sortKey) th.setAttribute('aria-sort', sortDir > 0 ? 'ascending' : 'descending');
+    else th.removeAttribute('aria-sort');
+  }
+  if (!sorted.length) {
+    const tr = document.createElement('tr');
+    const td = cell(p.view === 'matches' ? 'No token meets every limit right now. Loosen a limit above, or look at the ones that miss by one.' : 'Nothing to show in this view.', 'ls-empty');
+    td.colSpan = 16;
+    tr.append(td);
+    body.replaceChildren(tr);
+    return;
+  }
+  body.replaceChildren(...sorted.map(({t, fails}) => {
+    const tr = document.createElement('tr');
+    tr.dataset.key = t.mint;
+    const res = el('td', 'ls-l');
+    res.append(resultPill(t, fails));
+    const sym = el('td', 'ls-l');
+    sym.append(tokenLink(t.mint, t.symbol, 'ls-link'));
+    const lk = el('td', 'ls-l');
+    const lkBox = el('div', 'ls-links');
+    lkBox.append(...linksFor(t, true));
+    lk.append(lkBox);
+    tr.append(
+      res, sym, cell(t.name, 'ls-l'), lk, cell(t.age),
+      cell(dashIfNull(t.liquidity_usd, usd)), cell(dashIfNull(t.market_cap_usd, usd)), cell(dashIfNull(t.volume_24h_usd, usd)),
+      cell(dashIfNull(t.vol_to_liq, (v) => one(v) + '×')), cell(dashIfNull(t.buy_share_pct, pct)),
+      cell(dashIfNull(t.holders, int)), cell(dashIfNull(t.top10_wallets_pct, pct)), cell(dashIfNull(t.largest_wallet_pct, pct)),
+      cell(dashIfNull(t.locked_lp_pct, pct)), cell(t.flags || '', 'ls-l ls-wrap'), cell(t.identified_holders || '', 'ls-l ls-wrap'),
+    );
+    return tr;
+  }));
+};
+
+const drawChart = (scored, p) => {
+  const box = $('#map-chart');
+  const pts = scored.filter(({t}) => t.holder_check === 'Checked' && t.liquidity_usd > 0);
+  const w = box.clientWidth, h = 300;
+  box.replaceChildren();
+  if (!w || !pts.length) return;
+  const svg = d3.select(box).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${w} ${h}`).attr('role', 'img')
+    .attr('aria-label', 'Scatter of pool liquidity against the share of supply held by the top ten wallets');
+  const xMin = Math.min(d3.min(pts, (d) => d.t.liquidity_usd), p.min_liq > 0 ? p.min_liq : Infinity) * 0.8;
+  const xMax = d3.max(pts, (d) => d.t.liquidity_usd) * 1.3;
+  const yMax = Math.max(d3.max(pts, (d) => d.t.top10_wallets_pct), p.max_top10) * 1.1;
+  const y = d3.scaleLinear([0, yMax], [h - 44, 12]).nice();
+  const yTicks = y.ticks(5);
+  const probe = svg.append('g');
+  const wide = d3.max(yTicks, (v) => probe.append('text').attr('class', 'ls-tick').text(v + '%').node().getComputedTextLength());
+  probe.remove();
+  const left = Math.ceil(wide) + 10, right = 16;
+  const x = d3.scaleLog([xMin, xMax], [left, w - right]);
+  const xTicks = [1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000].filter((v) => v >= xMin && v <= xMax);
+  const g = svg.append('g');
+  g.selectAll('line.gy').data(yTicks).join('line').attr('x1', left).attr('x2', w - right).attr('y1', (v) => y(v)).attr('y2', (v) => y(v))
+    .attr('stroke', 'var(--cds-chart-grid)').attr('stroke-width', 1);
+  g.selectAll('text.ty').data(yTicks).join('text').attr('class', 'ls-tick').attr('x', left - 6).attr('y', (v) => y(v)).attr('dy', '0.32em')
+    .attr('text-anchor', 'end').text((v) => v + '%');
+  const every = xTicks.length * 56 > (w - left - right) ? 2 : 1;
+  g.selectAll('text.tx').data(xTicks.filter((v, i) => i % every === 0)).join('text').attr('class', 'ls-tick').attr('x', (v) => x(v)).attr('y', h - 26)
+    .attr('text-anchor', 'middle').text((v) => d3.format('$~s')(v));
+  g.append('line').attr('x1', left).attr('x2', w - right).attr('y1', y(0)).attr('y2', y(0)).attr('stroke', 'var(--cds-chart-axis)').attr('stroke-width', 1);
+  g.append('text').attr('class', 'ls-tick').attr('x', w - right).attr('y', h - 6).attr('text-anchor', 'end').text('Pool liquidity (USD, log scale)');
+  g.append('text').attr('class', 'ls-tick').attr('x', left).attr('y', 10).attr('text-anchor', 'start').text('Held by top-10 wallets');
+  // the reader's limits
+  if (p.min_liq >= xMin && p.min_liq <= xMax) {
+    g.append('line').attr('x1', x(p.min_liq)).attr('x2', x(p.min_liq)).attr('y1', 12).attr('y2', y(0))
+      .attr('stroke', 'var(--cds-chart-reference)').attr('stroke-width', 1).attr('stroke-dasharray', '4 4');
+  }
+  if (p.max_top10 <= y.domain()[1]) {
+    g.append('line').attr('x1', left).attr('x2', w - right).attr('y1', y(p.max_top10)).attr('y2', y(p.max_top10))
+      .attr('stroke', 'var(--cds-chart-reference)').attr('stroke-width', 1).attr('stroke-dasharray', '4 4');
+  }
+  const tip = el('div', 'ls-tip');
+  tip.hidden = true;
+  box.append(tip);
+  const showTip = (d, cx, cy) => {
+    tip.replaceChildren(
+      el('div', 'ls-tip-h', d.t.symbol + ' · ' + d.t.name),
+      el('div', null, 'Liquidity ' + usd(d.t.liquidity_usd)),
+      el('div', null, 'Top-10 wallets ' + pct(d.t.top10_wallets_pct)),
+      el('div', null, d.fails.length ? 'Misses: ' + d.fails.join(', ') : 'Meets every limit'),
+    );
+    tip.hidden = false;
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    tip.style.left = Math.max(0, Math.min(w - tw, cx + 10)) + 'px';
+    tip.style.top = Math.max(0, cy - th - 8) + 'px';
+  };
+  const ordered = pts.slice().sort((a, b) => (a.fails.length ? 0 : 1) - (b.fails.length ? 0 : 1));
+  g.selectAll('circle').data(ordered).join('circle')
+    .attr('cx', (d) => x(d.t.liquidity_usd)).attr('cy', (d) => y(d.t.top10_wallets_pct)).attr('r', 6)
+    .attr('fill', (d) => (d.fails.length ? 'var(--cds-chart-muted)' : dash.colors[0]))
+    .attr('stroke', 'var(--color-panel)').attr('stroke-width', 1.5)
+    .on('mouseenter', (event, d) => showTip(d, x(d.t.liquidity_usd), y(d.t.top10_wallets_pct)))
+    .on('mouseleave', () => { tip.hidden = true; });
+  // name the dots that meet every limit, keeping labels apart
+  const named = ordered.filter((d) => !d.fails.length).map((d) => ({d, px: x(d.t.liquidity_usd), py: y(d.t.top10_wallets_pct)})).sort((a, b) => a.py - b.py);
+  const placed = [];
+  for (const n of named) {
+    const text = g.append('text').attr('class', 'ls-dotlabel').text(n.d.t.symbol);
+    const tw = text.node().getComputedTextLength();
+    const flip = n.px + 10 + tw > w - right;
+    let lx = flip ? n.px - 10 - tw : n.px + 10, ly = n.py;
+    for (const q of placed) {
+      if (lx < q.x + q.w + 4 && q.x < lx + tw + 4 && Math.abs(ly - q.y) < 13) ly = q.y + 13;
+    }
+    placed.push({x: lx, y: ly, w: tw});
+    text.attr('x', lx).attr('y', ly).attr('dy', '0.32em');
+  }
+};
+
+function draw() {
+  const src = dash.data('tokens'), alerts = dash.data('alerts');
+  const counts = dash.data('screen_counts'), acounts = dash.data('alert_counts');
+  const ok = src.status === 'ok';
+  const p = params();
+  for (const n of numInputs) if (n !== document.activeElement) n.value = p[n.dataset.param];
+  danger.checked = p.no_danger;
+  for (const b of document.querySelectorAll('#views button')) b.setAttribute('aria-pressed', String(b.dataset.view === p.view));
+
+  const settled = src.status !== 'loading' && alerts.status !== 'loading';
+  for (const n of document.querySelectorAll('.ls-page .dash-skeleton, .ls-page .ls-was-skeleton')) {
+    n.classList.add('ls-was-skeleton');
+    n.classList.toggle('dash-skeleton', !settled);
+  }
+  const fill = (id, data) => {
+    const row = data.status === 'ok' && data.data[0] ? data.data[0] : null;
+    for (const n of document.querySelectorAll('[data-source="' + id + '"]')) n.textContent = row ? int(row[n.dataset.field]) : '—';
+  };
+  fill('screen_counts', counts);
+  fill('alert_counts', acounts);
+  drawAlerts(alerts, p);
+
+  const box = $('#map-chart');
+  if (!ok) {
+    $('#takeaway').textContent = '—';
+    $('#as-of').textContent = '—';
+    $('#n-match').textContent = '—';
+    $('#token-rows').replaceChildren();
+    box.replaceChildren();
+    if (src.status === 'error') {
+      const f = el('div', 'ls-fail');
+      f.append(el('span', 'ls-fail-dot'), el('span', null, 'Failed to load'));
+      box.append(f);
+    }
+    return;
+  }
+  const scored = src.data.map((t) => ({t, fails: failsOf(t, p)}));
+  const matches = scored.filter((d) => !d.fails.length);
+  const near = scored.filter((d) => d.fails.length === 1);
+  $('#n-match').textContent = int(matches.length);
+  $('#as-of').textContent = new Intl.DateTimeFormat('en', {month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short'}).format(new Date(src.data[0].as_of));
+  const fresh = alerts.status === 'ok' ? alerts.data.filter((a) => a.is_new) : [];
+  const lead = fresh.length
+    ? `${int(fresh.length)} new ${fresh.length === 1 ? 'alert' : 'alerts'} in the last run: ${fresh.slice(0, 4).map((a) => a.symbol).join(', ')}${fresh.length > 4 ? ' and ' + int(fresh.length - 4) + ' more' : ''}. `
+    : 'No new alerts in the last run. ';
+  $('#takeaway').textContent = lead + `${int(matches.length)} of ${int(scored.length)} screened tokens meet every limit on screen now, and ${int(near.length)} miss by one.`;
+  const view = {matches, near, checked: scored.filter((d) => d.t.holder_check === 'Checked'), all: scored}[p.view];
+  drawTable(view, p);
+  drawChart(scored, p);
+}
+dash.onData(draw);
+</script>
