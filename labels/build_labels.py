@@ -21,6 +21,9 @@ It also adds every wallet on pump.fun's own profit leaderboard
 sorted by combined and by realized profit, top 100 per list), with the
 pump.fun username, X handle and best placement.
 
+X (Twitter) accounts: every listed wallet gets the X account linked to its
+pump.fun profile (`x_username`), when there is one.
+
 Then it looks up the pump.fun profile behind every
 holder wallet with at least 1% of a token, and keeps those that have a
 username. Names and profile text are written by strangers: they are stored
@@ -155,8 +158,16 @@ def main(tokens_path, out_path):
 
     for addr in excluded:
         rows.pop(addr, None)
+    checked = set()  # wallets whose pump.fun profile has been looked up
+
+    def note_x(r, p):
+        x = clean((p or {}).get("x_username"), 20)
+        if x and X_HANDLE.match(x):
+            r["x_username"] = x
+
     for j, w in enumerate(sorted(big_holders - excluded)):
         p = get(f"https://frontend-api-v3.pump.fun/users/{w}")
+        checked.add(w)
         time.sleep(0.25)
         name = clean((p or {}).get("username"), 40)
         if not name or name == w[:6]:
@@ -168,6 +179,7 @@ def main(tokens_path, out_path):
         if p.get("is_banned") and "banned" not in r["flags"]:
             r["flags"].append("banned")
         r["followers"] = p.get("followers")
+        note_x(r, p)
         if r["category"] in ("", "INSIDER"):
             claim(r, "PROFILE", name, "PUMP.FUN", "AUTONAME" if auto else "PROFILE")
         else:
@@ -202,6 +214,16 @@ def main(tokens_path, out_path):
                 if e.get("isVerified") and "verified" not in r["flags"]:
                     r["flags"].append("verified")
                 r["best_pnl_usd"] = max(r.get("best_pnl_usd") or 0, place["pnl_usd"])
+    # X accounts linked on pump.fun, for listed wallets not looked up yet
+    # (mostly leaderboard wallets whose board entry carried no X handle).
+    for w in [a for a, r in rows.items() if not r.get("x_username") and a not in checked]:
+        p = get(f"https://frontend-api-v3.pump.fun/users/{w}")
+        checked.add(w)
+        time.sleep(0.25)
+        if p:
+            note_x(rows[w], p)
+            if rows[w].get("followers") is None:
+                rows[w]["followers"] = p.get("followers")
     for addr, hd in holdings.items():
         if addr in rows:
             rows[addr]["holdings_usd"] = hd["usd"]

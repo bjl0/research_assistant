@@ -76,6 +76,8 @@ tbody tr:last-child td { border-bottom: 0; }
 .pnl { font-family: var(--mono); font-size: 11.5px; color: var(--good); border: 1px solid color-mix(in srgb, var(--good) 45%, transparent); background: color-mix(in srgb, var(--good) 12%, transparent); padding: 1px 6px; border-radius: 3px; }
 .usd { font-family: var(--mono); font-size: 11.5px; color: var(--warn); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); background: color-mix(in srgb, var(--warn) 12%, transparent); padding: 1px 6px; border-radius: 3px; }
 .dim { color: var(--faint); font-family: var(--mono); font-size: 11.5px; }
+.xlink { font-family: var(--mono); font-size: 11.5px; color: var(--accent); text-decoration: none; }
+.xlink:hover, .xlink:focus-visible { text-decoration: underline; }
 .flag { font-family: var(--mono); font-size: 10px; letter-spacing: .05em; padding: 1px 5px; border-radius: 3px; border: 1px solid var(--line); color: var(--muted); margin-right: 4px; text-transform: uppercase; }
 .flag.manual { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); }
 .flag.insider, .flag.banned { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 50%, transparent); }
@@ -136,6 +138,7 @@ label.f input, label.f select, label.f textarea { background: var(--bg); border:
   <section class="legend" aria-label="How to read this table">
     <div><h2>Confidence</h2><p>Set by the kind of evidence, not guessed per wallet. 90: on pump.fun's own profit leaderboard. 80: a pump.fun profile name. 70: a RugCheck insider flag. 50: a pump.fun name that looks auto-generated. Your own labels use the value you choose.</p></div>
     <div><h2>PF Profit</h2><p>The wallet's best profit on pump.fun's leaderboard (top 100 for the last 24 hours, 7 days and 30 days, by total and by realized profit) at the last scan. Total profit includes gains on coins still held. The tag next to the name shows its best rank.</p></div>
+    <div><h2>X</h2><p>The X (Twitter) account linked to the wallet's pump.fun profile. A linked account is the profile owner's own claim, so treat it as a lead, not proof of identity.</p></div>
     <div><h2>Tracked $</h2><p>Value this wallet held across the screener's tokens at the last scan, from RugCheck's top-holder list and price. It covers only those tokens, so it is a floor, not a net worth.</p></div>
     <div><h2>SOL balance</h2><p>Turn on with the SOL BALANCE button. Native SOL in the wallet when the labels were last scanned, read from a Solana node. Wrapped SOL in token accounts, which is how trading pools hold it, is not counted.</p></div>
     <div><h2>Tokens</h2><p>How many screener tokens the wallet showed up in. The automatic list holds individual trader wallets only: token creators, pools, liquidity lockers and order-book markets are left out. Labels are research notes; names and profiles come from strangers and are shown as plain text.</p></div>
@@ -154,13 +157,13 @@ label.f input, label.f select, label.f textarea { background: var(--bg); border:
   };
   const MANUAL_CATS = ["CEX", "VC FUND", "KOL", "SMART MONEY", "INSIDER", "BOT", "SCAMMER", "EXPLOITER", "MULTISIG", "TREASURY", "CREATOR", "AMM", "OTHER"];
   const BASE_COLS = [
-    ["address", "Address"], ["chain", "Chain"], ["label", "Label"], ["category", "Category"],
+    ["address", "Address"], ["chain", "Chain"], ["label", "Label"], ["x_username", "X"], ["category", "Category"],
     ["confidence", "Confidence"], ["best_pnl_usd", "PF Profit", "num"], ["holdings_usd", "Tracked $", "num"], ["ntokens", "Tokens", "num"], ["flags", "Flags"], ["updated_at", "Updated"],
   ];
   const SOL_COL = ["sol_balance", "SOL", "num"];
   let showSol = false, hasSol = false;
   try { showSol = localStorage.getItem("showSol") === "1"; } catch {}
-  const cols = () => (showSol && hasSol ? [...BASE_COLS.slice(0, 7), SOL_COL, ...BASE_COLS.slice(7)] : BASE_COLS);
+  const cols = () => (showSol && hasSol ? [...BASE_COLS.slice(0, 8), SOL_COL, ...BASE_COLS.slice(8)] : BASE_COLS);
   const sol = (v) => v >= 1000 ? Math.round(v).toLocaleString() : v >= 1 ? v.toFixed(2) : v > 0 ? v.toFixed(4) : "0";
   const B58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
   const $ = (id) => document.getElementById(id);
@@ -195,7 +198,7 @@ label.f input, label.f select, label.f textarea { background: var(--bg); border:
     const q = query.trim().toLowerCase();
     let list = [...merged().values()].filter((r) => B58.test(r.address || ""));
     if (cat !== "ALL") list = list.filter((r) => (cat === "MINE" ? r.manual : r.category === cat));
-    if (q) list = list.filter((r) => [r.address, r.label, r.sublabel, r.category, r.note, ...(r.tokens || [])].some((v) => v && String(v).toLowerCase().includes(q)));
+    if (q) list = list.filter((r) => [r.address, r.label, r.sublabel, r.category, r.note, r.x_username, ...(r.tokens || [])].some((v) => v && String(v).toLowerCase().includes(q)));
     const k = sortKey, d = sortDir === "asc" ? 1 : -1;
     list.sort((a, b) => {
       let x = a[k], y = b[k];
@@ -267,6 +270,12 @@ label.f input, label.f select, label.f textarea { background: var(--bg); border:
       tr.append(el("td", "chain", "SOL"));
       const lt = el("td", "label"); lt.append(el("b", "", txt(r.label) || "Unlabelled")); if (r.sublabel) lt.append(el("span", "sub", txt(r.sublabel, 30))); lt.title = txt(r.label, 200);
       tr.append(lt);
+      const xt = el("td");
+      if (/^[A-Za-z0-9_]{1,15}$/.test(r.x_username || "")) {
+        const xl = el("a", "xlink", "@" + r.x_username); xl.href = "https://x.com/" + r.x_username; xl.target = "_blank"; xl.rel = "noopener noreferrer";
+        xl.onclick = (e) => e.stopPropagation(); xl.onkeydown = (e) => e.stopPropagation(); xt.append(xl);
+      } else xt.append(el("span", "dim", "—"));
+      tr.append(xt);
       const ct = el("td"); ct.append(pill(r.category)); tr.append(ct);
       const cf = el("td"); const c = Math.max(0, Math.min(100, +r.confidence || 0));
       const cw = el("span", "conf" + (c < 80 ? " mid" : "")); cw.append(el("span", "", String(c)));

@@ -87,4 +87,6 @@ The old session's shell could not reach any of the data sites; a network policy 
 
 **pump.fun profit leaderboard** (added 10 October 2026 at Blake's request): `GET https://frontend-api-v3.pump.fun/pnl-leaderboard?period=daily|weekly|monthly&sort=combined|realized&limit=100` (found in pump.fun's web app; 100 is the most it returns). Wallets go in as category `TOP TRADER`, confidence 90, with `leaderboard` placements, `best_pnl_usd` and `x_username`. Kolscan (`kolscan.io`) and the Fomo app were also requested; as of 10 October both are blocked by the environment's network policy even after Blake allowed domains (`pump.fun` did open), and Fomo has no known public leaderboard page or feed.
 
+**X accounts** (added 11 October 2026 at Blake's request): every listed wallet carries `x_username` when its pump.fun profile has an X account linked (from the leaderboard entry or `/users/<wallet>`). The page shows it in an X column linking to `https://x.com/<handle>`. Kolscan's X links were also requested but `kolscan.io` was still blocked by the network policy on 11 October.
+
 **Confidence** is fixed by evidence type (90 pump.fun profit leaderboard, 80 pump.fun profile, 70 RugCheck insider, 50 auto-generated-looking pump.fun name). "Tracked $" only counts holdings in the screener's tokens. The page links only to pump.fun profiles.
