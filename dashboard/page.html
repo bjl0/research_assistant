@@ -208,8 +208,11 @@ const NO_BIG_WALLET = 'No wallet holds 1% or more';
 const SAME_AMOUNTS = /^\d+ top wallets hold near-identical amounts$/;
 const LINKED = /^(\d+) linked wallets \(RugCheck\)$/;   // red from 5 linked wallets
 const redFlag = (f) => SAME_AMOUNTS.test(f) || (LINKED.test(f) && Number(f.match(LINKED)[1]) >= 5);
-// alerts down 90% or more since their first alert leave the page (the screener stops tracking them too)
-const downAlert = (a) => Boolean(a.removed_at) || (a.change_since_first_pct != null && a.change_since_first_pct <= -90);
+// Blake's removal rules (the screener stops tracking these too): down 90% or more since the first alert or from the
+// all-time high, or a market cap under $10K
+const downAlert = (a) => Boolean(a.removed_at) || (a.change_since_first_pct != null && a.change_since_first_pct <= -90)
+  || (a.latest_cap_usd != null && a.latest_cap_usd < 10000) || (a.ath_cap_usd != null && a.latest_cap_usd != null && a.latest_cap_usd <= a.ath_cap_usd * 0.1);
+const smallToken = (t) => t.market_cap_usd != null && t.market_cap_usd < 10000;
 const walletWarning = (r) => r.identity_checks === NO_BIG_WALLET || (r.lookalike_wallets || 0) >= 5
   || String(r.flags || '').split('; ').some((f) => SAME_AMOUNTS.test(f));
 const usd = d3.format('$,.0f'), int = d3.format(','), one = d3.format('.1f'), signed = d3.format('+,.1f');
@@ -220,20 +223,23 @@ const when = (s) => new Intl.DateTimeFormat('en', {month: 'short', day: 'numeric
 dash.calc('screen_counts', {
   inputs: ['tokens', 'alerts'],
   title: 'Tokens screened',
-  description: 'How many tokens the last run screened, and how many of those got holder checks, leaving out tokens hidden for wallet warnings or for falling 90% or more since their first alert.',
+  description: 'How many tokens the last run screened, and how many of those got holder checks, leaving out tokens hidden for wallet warnings or removed for a cap under $10K or a 90% fall.',
   fn: (tokens, alerts) => {
-    const down = new Set(alerts.filter((a) => a.removed_at || (a.change_since_first_pct != null && a.change_since_first_pct <= -90)).map((a) => a.mint));
-    const shown = tokens.filter((t) => !(t.identity_checks === 'No wallet holds 1% or more' || (t.lookalike_wallets || 0) >= 5 || down.has(t.mint)));
+    const down = new Set(alerts.filter((a) => a.removed_at || (a.change_since_first_pct != null && a.change_since_first_pct <= -90)
+      || (a.latest_cap_usd != null && a.latest_cap_usd < 10000) || (a.ath_cap_usd != null && a.latest_cap_usd != null && a.latest_cap_usd <= a.ath_cap_usd * 0.1)).map((a) => a.mint));
+    const shown = tokens.filter((t) => !(t.identity_checks === 'No wallet holds 1% or more' || (t.lookalike_wallets || 0) >= 5 || down.has(t.mint)
+      || (t.market_cap_usd != null && t.market_cap_usd < 10000)));
     return [{screened: shown.length, holder_checked: shown.filter((t) => t.holder_check === 'Checked').length}];
   },
 });
 dash.calc('alert_counts', {
   inputs: ['alerts'],
   title: 'Alert counts',
-  description: 'How many tokens have been alerted so far, and how many got their first alert in the last run, leaving out tokens hidden for wallet warnings or for falling 90% or more since their first alert.',
+  description: 'How many tokens have been alerted so far, and how many got their first alert in the last run, leaving out tokens hidden for wallet warnings or removed for a cap under $10K or a 90% fall.',
   fn: (alerts) => {
     const shown = alerts.filter((a) => !(a.identity_checks === 'No wallet holds 1% or more' || String(a.flags || '').split('; ').some((f) => / top wallets hold near-identical amounts$/.test(f))
-      || a.removed_at || (a.change_since_first_pct != null && a.change_since_first_pct <= -90)));
+      || a.removed_at || (a.change_since_first_pct != null && a.change_since_first_pct <= -90)
+      || (a.latest_cap_usd != null && a.latest_cap_usd < 10000) || (a.ath_cap_usd != null && a.latest_cap_usd != null && a.latest_cap_usd <= a.ath_cap_usd * 0.1)));
     return [{alerts: shown.length, new_this_run: shown.filter((a) => a.is_new).length}];
   },
 });
@@ -690,10 +696,10 @@ function draw() {
   }
   const downs = alerts.status === 'ok' ? alerts.data.filter(downAlert) : [];
   const downMints = new Set(downs.map((a) => a.mint));
-  const shownTokens = src.data.filter((t) => !walletWarning(t) && !downMints.has(t.mint));
+  const shownTokens = src.data.filter((t) => !walletWarning(t) && !downMints.has(t.mint) && !smallToken(t));
   const hiddenAlerts = alerts.status === 'ok' ? alerts.data.filter((a) => walletWarning(a) && !downAlert(a)).length : 0;
   const hiddenTokens = src.data.length - shownTokens.length;
-  $('#hidden-note').textContent = `Hidden: ${int(hiddenTokens)} screened ${hiddenTokens === 1 ? 'token' : 'tokens'} and ${int(hiddenAlerts)} ${hiddenAlerts === 1 ? 'alert' : 'alerts'} where no wallet holds 1% or more, or 5 or more wallets hold near-identical amounts; ${int(downs.length)} ${downs.length === 1 ? 'alert' : 'alerts'} removed for falling 90% or more since the first alert.`;
+  $('#hidden-note').textContent = `Hidden by your rules: ${int(hiddenTokens)} screened ${hiddenTokens === 1 ? 'token' : 'tokens'} and ${int(hiddenAlerts + downs.length)} ${hiddenAlerts + downs.length === 1 ? 'alert' : 'alerts'} (wallet warnings, a market cap under $10K, or a fall of 90% or more since the first alert or from the all-time high).`;
   const scored = shownTokens.map((t) => ({t, fails: failsOf(t, p)}));
   const matches = scored.filter((d) => !d.fails.length);
   const near = scored.filter((d) => d.fails.length === 1);

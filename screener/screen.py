@@ -115,13 +115,26 @@ def candidates(run):
     return out
 
 
-DOWN_REMOVE_PCT = -90             # Blake's rule (11 Oct 2026): an alert down this much since its first alert leaves the screener
+DOWN_REMOVE_PCT = -90             # Blake's rules (11 Oct 2026): a token leaves the screener when it is down 90% or more
+MIN_CAP_USD = 10000               # since its first alert or from its all-time high, or its market cap falls under $10K
+
+
+def removal_reason(a):
+    """Why an alert has left the screener, or '' if it has not. Once removed it is never tracked again."""
+    if a.get("removed_at"):
+        return a.get("removed_reason") or "removed earlier"
+    ch, cap, ath = a.get("change_since_first_pct"), a.get("latest_cap_usd"), a.get("ath_cap_usd")
+    if ch is not None and ch <= DOWN_REMOVE_PCT:
+        return "down 90% or more since first alert"
+    if cap is not None and cap < MIN_CAP_USD:
+        return "market cap under $10K"
+    if ath and cap is not None and cap <= ath * (1 + DOWN_REMOVE_PCT / 100.0):
+        return "down 90% or more from all-time high"
+    return ""
 
 
 def removed(a):
-    """True once an alert has fallen DOWN_REMOVE_PCT or more since its first alert; it is then never tracked again."""
-    ch = a.get("change_since_first_pct")
-    return bool(a.get("removed_at")) or (ch is not None and ch <= DOWN_REMOVE_PCT)
+    return bool(removal_reason(a))
 
 
 def tracked(prev_alerts, as_of):
@@ -176,6 +189,7 @@ def fails(r, p):
     if r["largest_wallet_pct"] > p["max_wallet"]: f.append("largest wallet")
     if r["locked_lp_pct"] is None or r["locked_lp_pct"] < p["min_locked"]: f.append("locked liquidity")
     if p["no_danger"] and r["danger"]: f.append("danger flag")
+    if r.get("market_cap_usd") is not None and r["market_cap_usd"] < MIN_CAP_USD: f.append("market cap under $10K")
     if r.get("identity_checks") == "No wallet holds 1% or more": f.append("no wallet at 1%")   # Blake's rule, 11 Oct 2026
     return f
 
@@ -361,9 +375,11 @@ def update_alerts(prev, rows, p, as_of, dropped=()):
             a["latest_alert_at"] = now
         a["now"] = "Meets strategy" if not f else "Misses: " + ", ".join(f)
     for a in by.values():
-        if removed(a):
+        why = removal_reason(a)
+        if why:
+            a.setdefault("removed_reason", why)
             a.setdefault("removed_at", now)
-            a["now"] = "Removed: down 90% or more since first alert"
+            a["now"] = "Removed: " + a["removed_reason"]
         a["is_new"] = a["first_alert_at"] == now
         for k in ("holders", "top10_wallets_pct", "largest_wallet_pct", "locked_lp_pct", "liquidity_usd", "volume_24h_usd"):
             a.setdefault(k, None)
@@ -594,7 +610,9 @@ def main():
             seen.add(owner); want.append(owner)
     out = os.path.join(run, "out")
     os.makedirs(out, exist_ok=True)
-    json.dump(rows, open(os.path.join(out, "tokens.json"), "w"), ensure_ascii=False, indent=0)
+    gone = {a["mint"] for a in alerts if removed(a)}
+    shown = [r for r in rows if r["mint"] not in gone and not (r["market_cap_usd"] is not None and r["market_cap_usd"] < MIN_CAP_USD)]
+    json.dump(shown, open(os.path.join(out, "tokens.json"), "w"), ensure_ascii=False, indent=0)
     json.dump(alerts, open(os.path.join(out, "alerts.json"), "w"), ensure_ascii=False, indent=0)
     keep = sorted(profiles.values(), key=lambda x: x.get("checked_at") or "", reverse=True)[:1500]
     json.dump({"list": keep}, open(os.path.join(out, "profiles_doc.json"), "w"), ensure_ascii=False)
