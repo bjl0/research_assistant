@@ -511,7 +511,7 @@ const drawAlerts = (src, p) => {
       tt.append(el('span', 'ls-traders-l', 'Top traders holding: '), mark(el('span', null, a.top_traders), a, 'top_traders'));
       card.append(tt);
     }
-    // liquidity, 24h volume and their ratio; the ratio turns red above 20x (Blake, 11 Oct)
+    // liquidity, 24h volume and their ratio now; red only when the ratio at the first alert was above 20x (Blake, 11 Oct)
     const flow = el('div', 'ls-chips');
     const ratio = a.liquidity_usd ? a.volume_24h_usd / a.liquidity_usd : null;
     const chip = (label, node) => {
@@ -522,8 +522,11 @@ const drawAlerts = (src, p) => {
     flow.append(
       chip('Liquidity', mark(el('span', null, dashIfNull(a.liquidity_usd, usd)), a, 'liquidity_usd')),
       chip('24h volume', mark(el('span', null, dashIfNull(a.volume_24h_usd, usd)), a, 'volume_24h_usd')),
-      chip('Volume ÷ liquidity', el('span', ratio != null && ratio > 20 ? 'ls-red' : null, ratio == null ? '—' : one(ratio) + '×')),
+      chip('Volume ÷ liquidity', el('span', null, ratio == null ? '—' : one(ratio) + '×')),
     );
+    const snap = a.first_alert_snapshot && typeof a.first_alert_snapshot === 'object' ? a.first_alert_snapshot : null;
+    const atAlert = snap && typeof snap.vol_to_liq === 'number' ? snap.vol_to_liq : null;
+    if (atAlert != null) flow.append(chip('At first alert', mark(el('span', atAlert > 20 ? 'ls-red' : null, one(atAlert) + '×'), a, 'first_alert_snapshot')));
     card.append(stats, flow, el('span', 'ls-stat-l', 'Identified holders'), holders);
     if (a.flags) {
       const fl = el('p', 'ls-note');
@@ -589,7 +592,7 @@ const drawTable = (rows, p) => {
     tr.append(
       res, sym, cell(t.name, 'ls-l'), lk, cell(t.age),
       cell(dashIfNull(t.liquidity_usd, usd)), cell(dashIfNull(t.market_cap_usd, usd)), cell(dashIfNull(t.volume_24h_usd, usd)),
-      cell(dashIfNull(t.vol_to_liq, (v) => one(v) + '×'), t.vol_to_liq != null && t.vol_to_liq > 20 ? 'ls-red' : undefined), cell(dashIfNull(t.buy_share_pct, pct)),
+      cell(dashIfNull(t.vol_to_liq, (v) => one(v) + '×')), cell(dashIfNull(t.buy_share_pct, pct)),
       cell(dashIfNull(t.holders, int)), cell(dashIfNull(t.top10_wallets_pct, pct)), cell(dashIfNull(t.largest_wallet_pct, pct)),
       cell(dashIfNull(t.locked_lp_pct, pct)), flagCell, cell(t.top_traders || '', 'ls-l ls-wrap' + (t.top_traders ? ' ls-trader-cell' : '')), cell(t.identified_holders || '', 'ls-l ls-wrap'),
     );
