@@ -8,6 +8,8 @@
   screen.py images       RUN   after the last build: downloads token thumbnails for the alerts into RUN/out/alerts.json.
                                The one command that goes online itself; if the image site cannot be reached it
                                keeps the thumbnails earlier runs saved and says so.
+  screen.py reprice      RUN   updates the market cap of every tracked alert in RUN/out/alerts.json straight from
+                               DEX Screener (also goes online itself). Used by the :45 top-up between hourly runs.
 
 RUN/ holds
   params.json          the saved strategy (the dashboard's dash/params document)
@@ -35,6 +37,7 @@ TRACK_DAYS = 14                   # keep re-pricing an alerted token for this lo
 MAX_REPORTS = 25                  # holder reports per run, deepest pools first
 MAX_PROFILE_LOOKUPS = 20          # new wallet lookups per run
 MIN_LOOKUP_PCT = 1.0              # only look up wallets holding at least this share of supply
+PRICE_URL = "https://api.dexscreener.com/tokens/v1/solana/%s"   # up to 30 mints, comma separated
 IMG_URL = "https://dd.dexscreener.com/ds-data/tokens/solana/%s.png"   # redirects to a 64 px thumbnail on cdn.dexscreener.com
 IMG_MAX_BYTES = 12000             # larger answers are skipped, not shrunk
 IMG_PER_RUN = 40                  # downloads per run
@@ -397,12 +400,49 @@ def add_images(run, as_of):
             len(errors), errors[0]))
 
 
+def fetch_pairs(mints):
+    req = urllib.request.Request(PRICE_URL % ",".join(mints), headers={"User-Agent": "Mozilla/5.0 (launch screener)", "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=20) as f:
+        return json.load(f)
+
+
+def reprice(run, as_of):
+    """Latest market cap for alerts still tracked, from the deepest pool of each token."""
+    path = os.path.join(run, "out", "alerts.json")
+    if not os.path.exists(path):
+        raise SystemExit("out/alerts.json is missing")
+    alerts = json.load(open(path, encoding="utf-8"))
+    mints = [a["mint"] for a in alerts if as_of - epoch(a["first_alert_at"]) <= TRACK_DAYS * 86400]
+    best, failed = {}, 0
+    for i in range(0, len(mints), 30):
+        try:
+            pairs = fetch_pairs(mints[i:i + 30])
+        except Exception as e:
+            failed += 1
+            print("Prices: a DEX Screener request failed (%s); those tokens keep their last cap." % getattr(e, "reason", e))
+            continue
+        for o in pairs if isinstance(pairs, list) else []:
+            mint = (o.get("baseToken") or {}).get("address")
+            mc, liq = num(o.get("marketCap")), num((o.get("liquidity") or {}).get("usd")) or 0
+            if o.get("chainId") == "solana" and mint in mints and mc and (mint not in best or liq > best[mint][0]):
+                best[mint] = (liq, mc)
+    now = iso(as_of)
+    for a in alerts:
+        if a["mint"] not in best:
+            continue
+        mc = best[a["mint"]][1]
+        a.update(latest_cap_usd=mc, latest_cap_at=now, peak_cap_usd=max(a.get("peak_cap_usd") or 0, mc),
+                 change_since_first_pct=round(100.0 * (mc / a["first_alert_cap_usd"] - 1), 1) if a.get("first_alert_cap_usd") else None)
+    json.dump(alerts, open(path, "w"), ensure_ascii=False, indent=0)
+    print("Prices: %d of %d tracked alerts re-priced." % (len(best), len(mints)))
+
+
 def money(v):
     return "n/a" if v is None else ("$%.2fM" % (v / 1e6) if v >= 1e6 else "$%.1fK" % (v / 1e3))
 
 
 def main():
-    if len(sys.argv) != 3 or sys.argv[1] not in ("urls-market", "urls-reports", "build", "images"):
+    if len(sys.argv) != 3 or sys.argv[1] not in ("urls-market", "urls-reports", "build", "images", "reprice"):
         raise SystemExit(__doc__)
     cmd, run = sys.argv[1], sys.argv[2]
     p = get_params(run)
@@ -426,6 +466,9 @@ def main():
     as_of = get_as_of(run)
     if cmd == "images":
         add_images(run, as_of)
+        return
+    if cmd == "reprice":
+        reprice(run, as_of)
         return
     if cmd == "urls-reports":
         mk = market(run, as_of)
