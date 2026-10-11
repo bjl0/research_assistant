@@ -483,7 +483,8 @@ def mark_traders(run, as_of):
             name = str(t.get("label") or h["address"][:6]).strip()[:40]
             # pump.fun coins all have a supply of 1 billion; other coins show the name only
             pct = 100.0 * (num(h.get("amount")) or 0) / 1e9 if mint.endswith("pump") else None
-            hits.append((pct or 0, name if pct is None else "%s %.1f%%" % (name, pct)))
+            share = "" if pct is None else (" <0.1%" if pct < 0.05 else " %.1f%%" % pct)
+            hits.append((pct or 0, name + share))
         found[mint] = " · ".join(t for _, t in sorted(hits, key=lambda x: -x[0]))
     now = iso(as_of)
     for k, rows in data.items():
