@@ -3,6 +3,7 @@
 .ls-head{display:flex;flex-direction:column;gap:var(--cds-gap-xs)}
 .ls-title{margin:0;font-family:var(--font-anthropic-serif);font-weight:400;font-size:var(--cds-font-size-title);text-wrap:balance}
 .ls-takeaway{margin:0;font-size:var(--cds-font-size-heading);max-width:65ch}
+.ls-reload{display:flex;flex-wrap:wrap;gap:var(--cds-gap-sm);align-items:center}
 .ls-asof{margin:0;color:var(--color-fg-muted);font-size:var(--cds-font-size-caption);max-width:75ch}
 .ls-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,10rem),1fr));gap:var(--cds-gap-md)}
 .ls-tile{background:var(--color-panel);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:var(--cds-pad-lg);display:flex;flex-direction:column;gap:var(--cds-gap-xs);min-width:0}
@@ -72,6 +73,10 @@
   <header class="ls-head" id="summary">
     <h1 class="ls-title">Solana launch screener</h1>
     <p class="ls-takeaway dash-skeleton" id="takeaway" data-source="tokens alerts">—</p>
+    <div class="ls-reload">
+      <button class="ls-btn" type="button" id="reload">Reload prices</button>
+      <span class="ls-asof" id="reload-note" aria-live="polite"></span>
+    </div>
     <p class="ls-asof">Last run <span id="as-of" data-source="tokens" data-field="as_of" data-row="0">—</span>. A scheduled run refreshes this page about once an hour, so prices here can be up to an hour old and new launches move within minutes. It reports measurements against your limits; it is not advice to buy or sell.</p>
   </header>
 
@@ -302,6 +307,14 @@ $('#alert-views').addEventListener('click', (event) => {
 $('#alert-cards').addEventListener('click', (event) => {
   const b = event.target.closest('button[data-acted]');
   if (b) toggleActed(b.dataset.acted);
+});
+// shows the newest saved run; the page itself cannot reach DEX Screener
+let reloading = false;
+$('#reload').addEventListener('click', () => {
+  reloading = true;
+  dash.refresh('tokens');
+  dash.refresh('alerts');
+  draw();
 });
 $('#token-table').addEventListener('click', (event) => {
   const b = event.target.closest('button[data-sort]');
@@ -607,6 +620,13 @@ function draw() {
   for (const b of document.querySelectorAll('#views button')) b.setAttribute('aria-pressed', String(b.dataset.view === p.view));
 
   const settled = src.status !== 'loading' && alerts.status !== 'loading';
+  const busy = !settled || src.refreshing || alerts.refreshing;
+  $('#reload').disabled = busy;
+  $('#reload').textContent = busy ? 'Reloading…' : 'Reload prices';
+  if (reloading && !busy) {
+    reloading = false;
+    $('#reload-note').textContent = 'Showing the newest saved prices.';
+  }
   for (const n of document.querySelectorAll('.ls-page .dash-skeleton, .ls-page .ls-was-skeleton')) {
     n.classList.add('ls-was-skeleton');
     n.classList.toggle('dash-skeleton', !settled);

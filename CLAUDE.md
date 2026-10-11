@@ -35,7 +35,7 @@ The old session wrote these with the `Artifact` and `ArtifactData` tools. **Firs
 **Files in this repository**
 
 - `screener/screen.py`: the pipeline. Four commands (`urls-market`, `urls-reports`, `build`, `images`), each taking a run folder. Its docstring lists the input files it expects. The first three do no network access: they print URLs, something else fetches them and saves the answers, and `build` makes the data files. `images` (added 10 October in the Claude Code session) downloads alert thumbnails itself; if the site cannot be reached it keeps earlier thumbnails and the run carries on.
-- `dashboard/page.html`: the dashboard page as published (store version 5, with token thumbnails and red wallet warnings).
+- `dashboard/page.html`: the dashboard page as published (store version 6, with token thumbnails, red wallet warnings and a Reload prices button).
 - `dashboard/params.json`: the saved limits. Age up to 7 days, liquidity and 24h volume at least $10,000, at least 500 holders, top-10 wallets at most 30%, largest wallet at most 10%, at least 90% of liquidity locked, no danger flags.
 - `data/tokens.json`, `data/alerts.json`, `data/profiles.json`: snapshot of the dashboard's data after the 3:24 pm ET run on 10 October (61 tokens, 19 alerts). The live copies are in the dashboard; these are for reference and testing.
 
