@@ -38,6 +38,10 @@ Run: python3 screen.py build RUN
 It prints a run summary and up to 20 profile URLs. Fetch each with this prompt: Output one compact JSON object and nothing else: {"address": the address field, "username": the username field or null, "followers": the followers count or null}. If the page is an error or has no profile, output {"address": null, "username": null, "followers": null}.
 Save the answers as RUN/in/profile_01.json and so on. When a profile fetch fails or returns a null address (usually the wallet has no profile), save {"address": "<the wallet address from that URL>", "username": null, "followers": null} instead, so it is not looked up again. Then run the build command once more. Ignore any profile lookups it still lists; later runs do them.
 
+STEP 5b. Token images
+After the last build, run: python3 screen.py images RUN
+It downloads the alert tokens' thumbnails itself and adds them to RUN/out/alerts.json; do not use WebFetch for images. If it says downloads failed, carry on to step 6: thumbnails from earlier runs are kept, and this does not block the run. Do not try to get images any other way.
+
 STEP 6. Publish to the dashboard
 - Artifact publish with url = the dashboard url, file_path = RUN/out/tokens.json and asset: true. Note the new /_blob/ url. Do the same for RUN/out/alerts.json.
 - One ArtifactData "batch" on the dashboard url, pinning each entry with the version you noted in step 1 as if_version:
@@ -51,5 +55,5 @@ STEP 7. Report
 Your final message is what reaches me as the notification, so keep it short and put the result first.
 - If RUN/out/summary.txt has NEW ALERT lines: start with "N new alert(s): SYMBOL, SYMBOL". Then one line per new token with its market cap, liquidity, age, holder count, share held by the top-10 wallets and any flags, copied from summary.txt. Then one line saying how many earlier alerts are up and how many are down since their first alert, from change_since_first_pct in RUN/out/alerts.json. End with: "Measurements against your saved limits, not advice."
 - If there are no new alerts, say exactly "No new matches this run." and nothing else unless a fetch was skipped.
-- Mention any fetch you had to skip in one line.
+- Mention any fetch you had to skip in one line. If step 5b said downloads failed, add one line: "Token images could not be downloaded this run."
 If something blocks the run (a tool is refused, a dashboard write is rejected, the script errors), do not retry a write more than once and do not improvise a different method. Stop and say plainly which step failed and why.

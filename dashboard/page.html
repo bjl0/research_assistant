@@ -3,6 +3,7 @@
 .ls-head{display:flex;flex-direction:column;gap:var(--cds-gap-xs)}
 .ls-title{margin:0;font-family:var(--font-anthropic-serif);font-weight:400;font-size:var(--cds-font-size-title);text-wrap:balance}
 .ls-takeaway{margin:0;font-size:var(--cds-font-size-heading);max-width:65ch}
+.ls-reload{display:flex;flex-wrap:wrap;gap:var(--cds-gap-sm);align-items:center}
 .ls-asof{margin:0;color:var(--color-fg-muted);font-size:var(--cds-font-size-caption);max-width:75ch}
 .ls-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,10rem),1fr));gap:var(--cds-gap-md)}
 .ls-tile{background:var(--color-panel);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:var(--cds-pad-lg);display:flex;flex-direction:column;gap:var(--cds-gap-xs);min-width:0}
@@ -24,6 +25,9 @@
 .ls-alerts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,21rem),1fr));gap:var(--cds-gap-md)}
 .ls-alert{background:var(--color-bg);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:var(--cds-pad-md);display:flex;flex-direction:column;gap:var(--cds-gap-sm);min-width:0}
 .ls-alert-top{display:flex;flex-wrap:wrap;gap:var(--cds-gap-sm);align-items:baseline;justify-content:space-between}
+.ls-alert-who{display:flex;gap:var(--cds-gap-sm);align-items:center;min-width:0}
+.ls-thumb{width:2.5rem;height:2.5rem;flex:none;border-radius:50%;object-fit:cover;background:var(--color-panel);border:1px solid var(--color-border-line);box-sizing:border-box}
+.ls-thumb-none{display:flex;align-items:center;justify-content:center;color:var(--color-fg-muted);font-weight:var(--cds-font-weight-medium)}
 .ls-alert-name{display:flex;flex-wrap:wrap;gap:var(--cds-gap-sm);align-items:baseline;min-width:0}
 .ls-alert-sym{font-size:var(--cds-font-size-heading);font-weight:var(--cds-font-weight-medium)}
 .ls-alert-sub{color:var(--color-fg-muted);font-size:var(--cds-font-size-caption);overflow-wrap:anywhere}
@@ -36,6 +40,10 @@
 .ls-stat-v{font-family:var(--font-anthropic-serif);font-size:var(--cds-font-size-heading);overflow-wrap:anywhere}
 .ls-up{color:var(--color-ok)}
 .ls-down{color:var(--color-bad)}
+.ls-traders{margin:0;padding:var(--cds-pad-xs) var(--cds-pad-sm);border-left:3px solid var(--color-ok);background:var(--color-panel);font-size:var(--cds-font-size-caption);overflow-wrap:anywhere}
+.ls-traders-l{color:var(--color-ok);font-weight:var(--cds-font-weight-medium)}
+.ls-table td.ls-trader-cell{color:var(--color-ok);font-weight:var(--cds-font-weight-medium)}
+.ls-red{color:var(--color-bad);font-weight:var(--cds-font-weight-medium)}
 .ls-alert-foot{display:flex;flex-wrap:wrap;gap:var(--cds-gap-sm);align-items:center;justify-content:space-between;font-size:var(--cds-font-size-caption);color:var(--color-fg-muted)}
 .ls-chart{position:relative;min-height:300px}
 .ls-chart svg{display:block}
@@ -68,6 +76,11 @@
   <header class="ls-head" id="summary">
     <h1 class="ls-title">Solana launch screener</h1>
     <p class="ls-takeaway dash-skeleton" id="takeaway" data-source="tokens alerts">—</p>
+    <div class="ls-reload">
+      <button class="ls-btn" type="button" id="reload">Reload prices</button>
+      <span class="ls-asof" id="reload-note" aria-live="polite"></span>
+    </div>
+    <p class="ls-asof" id="hidden-note"></p>
     <p class="ls-asof">Last run <span id="as-of" data-source="tokens" data-field="as_of" data-row="0">—</span>. A scheduled run refreshes this page about once an hour, so prices here can be up to an hour old and new launches move within minutes. It reports measurements against your limits; it is not advice to buy or sell.</p>
   </header>
 
@@ -150,6 +163,7 @@
           <th data-field="largest_wallet_pct"><button class="ls-sort" type="button" data-sort="largest_wallet_pct">Largest wallet</button></th>
           <th data-field="locked_lp_pct"><button class="ls-sort" type="button" data-sort="locked_lp_pct">Locked liquidity</button></th>
           <th class="ls-l" data-field="flags">Flags to read</th>
+          <th class="ls-l" data-field="top_traders">Top traders holding</th>
           <th class="ls-l" data-field="identified_holders">Identified holders</th>
         </tr></thead>
         <tbody id="token-rows"></tbody>
@@ -190,6 +204,12 @@
 <script>
 const $ = (s) => document.querySelector(s);
 const DEFAULTS = {max_age_days: 7, min_liq: 10000, min_vol: 10000, min_holders: 500, max_top10: 30, max_wallet: 10, min_locked: 90, no_danger: true, view: 'matches', alert_view: 'all'};
+const NO_BIG_WALLET = 'No wallet holds 1% or more';
+const SAME_AMOUNTS = /^\d+ top wallets hold near-identical amounts$/;
+const LINKED = /^(\d+) linked wallets \(RugCheck\)$/;   // red from 5 linked wallets
+const redFlag = (f) => SAME_AMOUNTS.test(f) || (LINKED.test(f) && Number(f.match(LINKED)[1]) >= 5);
+const walletWarning = (r) => r.identity_checks === NO_BIG_WALLET || (r.lookalike_wallets || 0) >= 5
+  || String(r.flags || '').split('; ').some((f) => SAME_AMOUNTS.test(f));
 const usd = d3.format('$,.0f'), int = d3.format(','), one = d3.format('.1f'), signed = d3.format('+,.1f');
 const pct = (v) => one(v) + '%';
 const dashIfNull = (v, f) => (v == null ? '—' : f(v));
@@ -198,14 +218,20 @@ const when = (s) => new Intl.DateTimeFormat('en', {month: 'short', day: 'numeric
 dash.calc('screen_counts', {
   inputs: ['tokens'],
   title: 'Tokens screened',
-  description: 'How many tokens the last run screened, and how many of those got holder checks.',
-  fn: (tokens) => [{screened: tokens.length, holder_checked: tokens.filter((t) => t.holder_check === 'Checked').length}],
+  description: 'How many tokens the last run screened, and how many of those got holder checks, leaving out tokens hidden for wallet warnings.',
+  fn: (tokens) => {
+    const shown = tokens.filter((t) => !(t.identity_checks === 'No wallet holds 1% or more' || (t.lookalike_wallets || 0) >= 5));
+    return [{screened: shown.length, holder_checked: shown.filter((t) => t.holder_check === 'Checked').length}];
+  },
 });
 dash.calc('alert_counts', {
   inputs: ['alerts'],
   title: 'Alert counts',
-  description: 'How many tokens have been alerted so far, and how many got their first alert in the last run.',
-  fn: (alerts) => [{alerts: alerts.length, new_this_run: alerts.filter((a) => a.is_new).length}],
+  description: 'How many tokens have been alerted so far, and how many got their first alert in the last run, leaving out tokens hidden for wallet warnings.',
+  fn: (alerts) => {
+    const shown = alerts.filter((a) => !(a.identity_checks === 'No wallet holds 1% or more' || String(a.flags || '').split('; ').some((f) => / top wallets hold near-identical amounts$/.test(f))));
+    return [{alerts: shown.length, new_this_run: shown.filter((a) => a.is_new).length}];
+  },
 });
 
 const params = () => {
@@ -299,6 +325,14 @@ $('#alert-cards').addEventListener('click', (event) => {
   const b = event.target.closest('button[data-acted]');
   if (b) toggleActed(b.dataset.acted);
 });
+// shows the newest saved run; the page itself cannot reach DEX Screener
+let reloading = false;
+$('#reload').addEventListener('click', () => {
+  reloading = true;
+  dash.refresh('tokens');
+  dash.refresh('alerts');
+  draw();
+});
 $('#token-table').addEventListener('click', (event) => {
   const b = event.target.closest('button[data-sort]');
   if (!b) return;
@@ -323,6 +357,23 @@ const tokenLink = (mint, text, cls) => {
 };
 // outside links are built only from addresses on the three expected sites
 const safeUrl = (u, starts) => (typeof u === 'string' && starts.some((s) => u.startsWith(s)) ? u : null);
+// thumbnails come only as inline raster images saved by the run; anything else gets the letter fallback
+const safeImg = (u) => (typeof u === 'string' && u.length < 40000 && /^data:image\/(?:webp|png|jpeg|gif);base64,[A-Za-z0-9+/]+={0,2}$/.test(u) ? u : null);
+const thumbFor = (a) => {
+  const src = safeImg(a.image);
+  if (src) {
+    const img = el('img', 'ls-thumb');
+    img.src = src;
+    img.alt = '';
+    img.width = 40;
+    img.height = 40;
+    return img;
+  }
+  const letter = Array.from(String(a.symbol || '').replace(/^[^\p{L}\p{N}]+/u, ''))[0] || '?';
+  const none = el('span', 'ls-thumb ls-thumb-none', letter.toUpperCase());
+  none.setAttribute('aria-hidden', 'true');
+  return none;
+};
 const extLink = (href, text) => {
   const a = el('a', 'ls-link', text);
   a.href = href;
@@ -346,6 +397,16 @@ const mark = (node, a, field) => {
   return node;
 };
 
+// wallet warnings: shown in red, and tokens carrying either are hidden from the page
+const flagNodes = (s) => {
+  const out = [];
+  String(s || '').split('; ').filter(Boolean).forEach((f, i) => {
+    if (i) out.push(document.createTextNode('; '));
+    out.push(redFlag(f) ? el('span', 'ls-red', f) : document.createTextNode(f));
+  });
+  return out;
+};
+
 const resultPill = (t, fails) => {
   if (!fails.length) return el('span', 'ls-pill ' + (t.flags ? 'ls-warn' : 'ls-ok'), t.flags ? 'Meets all, read flags' : 'Meets all');
   if (t.holder_check !== 'Checked') return el('span', 'ls-pill ls-off', 'Not checked');
@@ -365,7 +426,7 @@ const drawAlerts = (src, p) => {
     }
     return;
   }
-  let rows = src.data.slice();
+  let rows = src.data.filter((a) => !walletWarning(a));
   if (p.alert_view === 'new') rows = rows.filter((a) => a.is_new);
   if (p.alert_view === 'meets') rows = rows.filter((a) => a.now === 'Meets strategy');
   if (p.alert_view === 'open') rows = rows.filter((a) => !acted[a.mint]);
@@ -381,8 +442,11 @@ const drawAlerts = (src, p) => {
     name.append(tokenLink(a.mint, a.symbol, 'ls-link ls-alert-sym'), mark(el('span', 'ls-alert-sub', a.name), a, 'name'));
     const state = el('div', 'ls-chips');
     if (a.is_new) state.append(el('span', 'ls-pill ls-ok', 'New'));
+    if (a.top_traders) state.append(el('span', 'ls-pill ls-ok', 'Top trader'));
     state.append(mark(el('span', 'ls-pill ' + (a.now === 'Meets strategy' ? 'ls-ok' : 'ls-off'), a.now || 'Not in the last run'), a, 'now'));
-    top.append(name, state);
+    const who = el('div', 'ls-alert-who');
+    who.append(thumbFor(a), name);
+    top.append(who, state);
 
     const chips = el('div', 'ls-chips');
     const trig = el('span', 'ls-chip');
@@ -416,14 +480,22 @@ const drawAlerts = (src, p) => {
     if (!holders.childNodes.length) holders.append(el('span', 'ls-chip', 'No holders identified yet'));
     holders.setAttribute('data-source', 'alerts');
 
-    card.append(top, chips, links, stats, el('span', 'ls-stat-l', 'Identified holders'), holders);
+    card.append(top, chips, links);
+    if (a.top_traders) {
+      const tt = el('p', 'ls-traders');
+      tt.append(el('span', 'ls-traders-l', 'Top traders holding: '), mark(el('span', null, a.top_traders), a, 'top_traders'));
+      card.append(tt);
+    }
+    card.append(stats, el('span', 'ls-stat-l', 'Identified holders'), holders);
     if (a.flags) {
       const fl = el('p', 'ls-note');
-      fl.append(document.createTextNode('Flags: '), mark(el('span', null, a.flags), a, 'flags'));
+      const fs = mark(el('span'), a, 'flags');
+      fs.append(...flagNodes(a.flags));
+      fl.append(document.createTextNode('Flags: '), fs);
       card.append(fl);
     }
     const foot = el('div', 'ls-alert-foot');
-    foot.append(mark(el('span', null, a.identity_checks || ''), a, 'identity_checks'));
+    foot.append(mark(el('span', a.identity_checks === NO_BIG_WALLET ? 'ls-red' : null, a.identity_checks || ''), a, 'identity_checks'));
     if (store) {
       const b = el('button', 'ls-btn', acted[a.mint] ? 'Acted on' : 'Not acted on');
       b.type = 'button';
@@ -454,7 +526,7 @@ const drawTable = (rows, p) => {
   if (!sorted.length) {
     const tr = document.createElement('tr');
     const td = cell(p.view === 'matches' ? 'No token meets every limit right now. Loosen a limit above, or look at the ones that miss by one.' : 'Nothing to show in this view.', 'ls-empty');
-    td.colSpan = 16;
+    td.colSpan = 17;
     tr.append(td);
     body.replaceChildren(tr);
     return;
@@ -470,12 +542,14 @@ const drawTable = (rows, p) => {
     const lkBox = el('div', 'ls-links');
     lkBox.append(...linksFor(t, true));
     lk.append(lkBox);
+    const flagCell = el('td', 'ls-l ls-wrap');
+    flagCell.append(...flagNodes(t.flags));
     tr.append(
       res, sym, cell(t.name, 'ls-l'), lk, cell(t.age),
       cell(dashIfNull(t.liquidity_usd, usd)), cell(dashIfNull(t.market_cap_usd, usd)), cell(dashIfNull(t.volume_24h_usd, usd)),
       cell(dashIfNull(t.vol_to_liq, (v) => one(v) + '×')), cell(dashIfNull(t.buy_share_pct, pct)),
       cell(dashIfNull(t.holders, int)), cell(dashIfNull(t.top10_wallets_pct, pct)), cell(dashIfNull(t.largest_wallet_pct, pct)),
-      cell(dashIfNull(t.locked_lp_pct, pct)), cell(t.flags || '', 'ls-l ls-wrap'), cell(t.identified_holders || '', 'ls-l ls-wrap'),
+      cell(dashIfNull(t.locked_lp_pct, pct)), flagCell, cell(t.top_traders || '', 'ls-l ls-wrap' + (t.top_traders ? ' ls-trader-cell' : '')), cell(t.identified_holders || '', 'ls-l ls-wrap'),
     );
     return tr;
   }));
@@ -568,6 +642,13 @@ function draw() {
   for (const b of document.querySelectorAll('#views button')) b.setAttribute('aria-pressed', String(b.dataset.view === p.view));
 
   const settled = src.status !== 'loading' && alerts.status !== 'loading';
+  const busy = !settled || src.refreshing || alerts.refreshing;
+  $('#reload').disabled = busy;
+  $('#reload').textContent = busy ? 'Reloading…' : 'Reload prices';
+  if (reloading && !busy) {
+    reloading = false;
+    $('#reload-note').textContent = 'Showing the newest saved prices.';
+  }
   for (const n of document.querySelectorAll('.ls-page .dash-skeleton, .ls-page .ls-was-skeleton')) {
     n.classList.add('ls-was-skeleton');
     n.classList.toggle('dash-skeleton', !settled);
@@ -583,6 +664,7 @@ function draw() {
   const box = $('#map-chart');
   if (!ok) {
     $('#takeaway').textContent = '—';
+    $('#hidden-note').textContent = '';
     $('#as-of').textContent = '—';
     $('#n-match').textContent = '—';
     $('#token-rows').replaceChildren();
@@ -594,12 +676,15 @@ function draw() {
     }
     return;
   }
-  const scored = src.data.map((t) => ({t, fails: failsOf(t, p)}));
+  const shownTokens = src.data.filter((t) => !walletWarning(t));
+  const hiddenAlerts = alerts.status === 'ok' ? alerts.data.filter(walletWarning).length : 0;
+  $('#hidden-note').textContent = `Hidden: ${int(src.data.length - shownTokens.length)} screened ${src.data.length - shownTokens.length === 1 ? 'token' : 'tokens'} and ${int(hiddenAlerts)} ${hiddenAlerts === 1 ? 'alert' : 'alerts'} where no wallet holds 1% or more, or 5 or more wallets hold near-identical amounts.`;
+  const scored = shownTokens.map((t) => ({t, fails: failsOf(t, p)}));
   const matches = scored.filter((d) => !d.fails.length);
   const near = scored.filter((d) => d.fails.length === 1);
   $('#n-match').textContent = int(matches.length);
   $('#as-of').textContent = new Intl.DateTimeFormat('en', {month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short'}).format(new Date(src.data[0].as_of));
-  const fresh = alerts.status === 'ok' ? alerts.data.filter((a) => a.is_new) : [];
+  const fresh = alerts.status === 'ok' ? alerts.data.filter((a) => a.is_new && !walletWarning(a)) : [];
   const lead = fresh.length
     ? `${int(fresh.length)} new ${fresh.length === 1 ? 'alert' : 'alerts'} in the last run: ${fresh.slice(0, 4).map((a) => a.symbol).join(', ')}${fresh.length > 4 ? ' and ' + int(fresh.length - 4) + ' more' : ''}. `
     : 'No new alerts in the last run. ';
