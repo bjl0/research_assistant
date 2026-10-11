@@ -119,6 +119,25 @@ DOWN_REMOVE_PCT = -90             # Blake's rules (11 Oct 2026): a token leaves 
 MIN_CAP_USD = 10000               # since its first alert or from its all-time high, or its market cap falls under $10K
 
 
+VOL_LIQ_MAX = 30                  # Blake's trial labels (11 Oct 2026), shown but never used to hide or block:
+BUY_SHARE_BAND = (45, 60)         # 24h volume over 30x liquidity, buys outside 45-60% of trades, first trigger only
+SNAPSHOT_FIELDS = ("age_hours", "market_cap_usd", "liquidity_usd", "volume_24h_usd", "volume_1h_usd", "vol_to_liq",
+                   "buys_24h", "sells_24h", "buy_share_pct", "change_1h_pct", "change_24h_pct", "holders", "top10_pct",
+                   "top10_wallets_pct", "largest_wallet_pct", "creator_pct", "locked_lp_pct", "linked_wallets",
+                   "lookalike_wallets", "rugcheck_score", "flags", "found_via", "boosts", "venue", "x_kind")
+
+
+def trial_labels(r):
+    """Warning labels from one set of measurements (a token row or a first-alert snapshot)."""
+    out = []
+    vl, bs = r.get("vol_to_liq"), r.get("buy_share_pct")
+    if vl is not None and vl > VOL_LIQ_MAX:
+        out.append("Volume %gx liquidity" % round(vl))
+    if bs is not None and not BUY_SHARE_BAND[0] <= bs <= BUY_SHARE_BAND[1]:
+        out.append("Buys %g%% of trades" % round(bs))
+    return out
+
+
 def removal_reason(a):
     """Why an alert has left the screener, or '' if it has not. Once removed it is never tracked again."""
     if a.get("removed_at"):
@@ -331,6 +350,7 @@ def build_rows(run, p, as_of, prev_alerts, profiles):
                 danger=danger, flags="; ".join(flags), identified_holders=" · ".join(ident[:8]),
                 identity_checks=("%d of %d top wallets looked up" % (checked, len(wallets))) if wallets else "No wallet holds 1% or more",
             )
+        r["labels"] = trial_labels(r)
         rows.append(r)
     return rows, lookups, dropped
 
@@ -353,7 +373,9 @@ def update_alerts(prev, rows, p, as_of, dropped=()):
         if not f and a is None and r["market_cap_usd"]:
             a = by[r["mint"]] = dict(mint=r["mint"], first_alert_at=now, first_alert_cap_usd=r["market_cap_usd"],
                                       first_alert_age=r["age"], triggers=0, latest_alert_at=now,
-                                      peak_cap_usd=r["market_cap_usd"])
+                                      peak_cap_usd=r["market_cap_usd"],
+                                      first_alert_snapshot={k: r.get(k) for k in SNAPSHOT_FIELDS},
+                                      first_alert_labels=trial_labels(r))
             new.append(r)
         if a is None:
             continue
@@ -622,7 +644,8 @@ def main():
     for r in new:
         lines.append("NEW ALERT %s (%s): cap %s, liquidity %s, %s old, %s holders, top-10 wallets %s%%, largest wallet %s%%%s" % (
             r["symbol"], r["name"], money(r["market_cap_usd"]), money(r["liquidity_usd"]), r["age"], r["holders"],
-            r["top10_wallets_pct"], r["largest_wallet_pct"], ("; flags: " + r["flags"]) if r["flags"] else ""))
+            r["top10_wallets_pct"], r["largest_wallet_pct"], ("; flags: " + r["flags"]) if r["flags"] else "")
+            + (("; check: " + ", ".join(r["labels"])) if r.get("labels") else ""))
     if not new:
         lines.append("No new matches this run.")
     if dropped:
