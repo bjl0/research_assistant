@@ -36,6 +36,7 @@ The old session wrote these with the `Artifact` and `ArtifactData` tools. **Firs
 
 - `screener/screen.py`: the pipeline. Three commands (`urls-market`, `urls-reports`, `build`), each taking a run folder. Its docstring lists the input files it expects. It does no network access itself: it prints URLs, something else fetches them and saves the answers, and it builds the data files.
 - `dashboard/page.html`: the dashboard page as published (version 3).
+- **Same-amount rule** (Blake, 11 October 2026): if 5 or more of a coin's top wallets (pools and lockers excluded) hold the same amount, within 3% of each other, `screen.py` drops the coin from tokens and alerts entirely, including earlier alerts, and lists it on a "Filtered out" line in the run summary. Constant `SAME_AMOUNT_DROP`; it is a script rule, not a `dash/params` limit. Deployed to the `screener/script` store document as version 6 at 00:38 UTC on 11 October. That live script had already gained `images` and `reprice` commands from another session (not reflected in this repo before); `screener/screen.py` was re-synced from it then, but `dashboard/hourly_task_prompt.txt` may still be behind the live task. Only holder-checked coins (up to 25 per run, 12 top holders each) can be tested.
 - `dashboard/params.json`: the saved limits. Age up to 7 days, liquidity and 24h volume at least $10,000, at least 500 holders, top-10 wallets at most 30%, largest wallet at most 10%, at least 90% of liquidity locked, no danger flags.
 - `data/tokens.json`, `data/alerts.json`, `data/profiles.json`: snapshot of the dashboard's data after the 3:24 pm ET run on 10 October (61 tokens, 19 alerts). The live copies are in the dashboard; these are for reference and testing.
 
@@ -68,3 +69,25 @@ The old session's shell could not reach any of the data sites; a network policy 
 - Data files are uploaded as artifact assets (`Artifact` publish with `asset: true`), then the dataset documents are repointed, then the old assets are deleted. Read an asset back with a single `path`, not `paths`.
 - RugCheck's locked-liquidity figures can disagree between a token's markets. The script uses total locked USD over total market liquidity; rows where the source data conflicts are flagged rather than guessed.
 - A pump.fun page exists for a token when its mint ends in `pump` or its venue is pumpfun or pumpswap (vanity mints do not end in `pump`).
+
+## Wallet label database (added 10 October 2026)
+
+**Page.** https://claude.ai/artifact/N6KrLkgXVPKqtQzGZcZWW3, titled "Solana Wallet Labels". A plain artifact (not a Dashboard-type one) with the `db` and `user` capabilities; page copy in `labels/page.html`. Store layout:
+
+| Store document | Holds | Who writes |
+| --- | --- | --- |
+| `auto/auto-0` … `auto/auto-N` (`{rows:[...]}`) | labels built by `labels/build_labels.py` | Claude only (rule: `auto` write `admin`) |
+| `meta/info` | last scan time, token and label counts | Claude only |
+| `labels/<wallet address>` | labels Blake adds or edits on the page; they override the auto label for that wallet | the page |
+
+**Refreshing.** `python3 labels/build_labels.py data/tokens.json labels/labels.json` (needs direct network access to RugCheck and pump.fun; this session's shell has it). It writes `labels/chunks/*.json`; write those to `auto/*` and `meta/info` with one `ArtifactData` batch, pinned with `if_version`, and delete any leftover `auto-N` documents if the chunk count shrank. Never touch the `labels` collection.
+
+**SOL balances.** The script also reads each wallet's native SOL balance from a Solana RPC node (`SOLANA_RPC_URL`, default `https://api.mainnet-beta.solana.com`) and stores it as `sol_balance` on each row, with `sol_checked_at` in `meta/info`. The page's SOL BALANCE button stays greyed out until rows carry balances. As of 10 October 2026 this environment's network policy blocks every Solana RPC host tried (403 from the proxy), so balances are not yet collected; Blake needs to add the RPC host to the environment's allowed domains, then rerun the refresh.
+
+**Trader wallets only** (Blake, 10 October 2026): the automatic list holds individual trader wallets. `build_labels.py` leaves out every account RugCheck names (pools of any venue, bonding curves, lockers, order-book markets), each token's market accounts and locker owners, and all token creator wallets. What remains are large holders with a pump.fun profile, RugCheck insiders, and pump.fun's profit leaderboard.
+
+**pump.fun profit leaderboard** (added 10 October 2026 at Blake's request): `GET https://frontend-api-v3.pump.fun/pnl-leaderboard?period=daily|weekly|monthly&sort=combined|realized&limit=100` (found in pump.fun's web app; 100 is the most it returns). Wallets go in as category `TOP TRADER`, confidence 90, with `leaderboard` placements, `best_pnl_usd` and `x_username`. Kolscan (`kolscan.io`) and the Fomo app were also requested; as of 10 October both are blocked by the environment's network policy even after Blake allowed domains (`pump.fun` did open), and Fomo has no known public leaderboard page or feed. Blake does not want fomoapi.io used: it is an unofficial third-party service, not Fomo's own API.
+
+**X accounts** (added 11 October 2026 at Blake's request): every listed wallet carries `x_username` when its pump.fun profile has an X account linked (from the leaderboard entry or `/users/<wallet>`). The page shows it in an X column linking to `https://x.com/<handle>`. Kolscan's X links were also requested but `kolscan.io` was still blocked by the network policy on 11 October. Blake also asked for X follower counts and name-based X matching (e.g. unipcs → theunipcs); every X host is blocked here, and Blake declined to pay for X API access, so this is shelved.
+
+**Confidence** is fixed by evidence type (90 pump.fun profit leaderboard, 80 pump.fun profile, 70 RugCheck insider, 50 auto-generated-looking pump.fun name). "Tracked $" only counts holdings in the screener's tokens. The page links only to pump.fun profiles.
