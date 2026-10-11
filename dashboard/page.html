@@ -39,6 +39,7 @@
 .ls-stat-v{font-family:var(--font-anthropic-serif);font-size:var(--cds-font-size-heading);overflow-wrap:anywhere}
 .ls-up{color:var(--color-ok)}
 .ls-down{color:var(--color-bad)}
+.ls-red{color:var(--color-bad);font-weight:var(--cds-font-weight-medium)}
 .ls-alert-foot{display:flex;flex-wrap:wrap;gap:var(--cds-gap-sm);align-items:center;justify-content:space-between;font-size:var(--cds-font-size-caption);color:var(--color-fg-muted)}
 .ls-chart{position:relative;min-height:300px}
 .ls-chart svg{display:block}
@@ -366,6 +367,18 @@ const mark = (node, a, field) => {
   return node;
 };
 
+// wallet warnings Blake wants shown in red: no wallet at 1% or more, or 5+ wallets holding near-identical amounts
+const NO_BIG_WALLET = 'No wallet holds 1% or more';
+const SAME_AMOUNTS = /^\d+ top wallets hold near-identical amounts$/;
+const flagNodes = (s) => {
+  const out = [];
+  String(s || '').split('; ').filter(Boolean).forEach((f, i) => {
+    if (i) out.push(document.createTextNode('; '));
+    out.push(SAME_AMOUNTS.test(f) ? el('span', 'ls-red', f) : document.createTextNode(f));
+  });
+  return out;
+};
+
 const resultPill = (t, fails) => {
   if (!fails.length) return el('span', 'ls-pill ' + (t.flags ? 'ls-warn' : 'ls-ok'), t.flags ? 'Meets all, read flags' : 'Meets all');
   if (t.holder_check !== 'Checked') return el('span', 'ls-pill ls-off', 'Not checked');
@@ -441,11 +454,13 @@ const drawAlerts = (src, p) => {
     card.append(top, chips, links, stats, el('span', 'ls-stat-l', 'Identified holders'), holders);
     if (a.flags) {
       const fl = el('p', 'ls-note');
-      fl.append(document.createTextNode('Flags: '), mark(el('span', null, a.flags), a, 'flags'));
+      const fs = mark(el('span'), a, 'flags');
+      fs.append(...flagNodes(a.flags));
+      fl.append(document.createTextNode('Flags: '), fs);
       card.append(fl);
     }
     const foot = el('div', 'ls-alert-foot');
-    foot.append(mark(el('span', null, a.identity_checks || ''), a, 'identity_checks'));
+    foot.append(mark(el('span', a.identity_checks === NO_BIG_WALLET ? 'ls-red' : null, a.identity_checks || ''), a, 'identity_checks'));
     if (store) {
       const b = el('button', 'ls-btn', acted[a.mint] ? 'Acted on' : 'Not acted on');
       b.type = 'button';
@@ -492,12 +507,14 @@ const drawTable = (rows, p) => {
     const lkBox = el('div', 'ls-links');
     lkBox.append(...linksFor(t, true));
     lk.append(lkBox);
+    const flagCell = el('td', 'ls-l ls-wrap');
+    flagCell.append(...flagNodes(t.flags));
     tr.append(
       res, sym, cell(t.name, 'ls-l'), lk, cell(t.age),
       cell(dashIfNull(t.liquidity_usd, usd)), cell(dashIfNull(t.market_cap_usd, usd)), cell(dashIfNull(t.volume_24h_usd, usd)),
       cell(dashIfNull(t.vol_to_liq, (v) => one(v) + '×')), cell(dashIfNull(t.buy_share_pct, pct)),
       cell(dashIfNull(t.holders, int)), cell(dashIfNull(t.top10_wallets_pct, pct)), cell(dashIfNull(t.largest_wallet_pct, pct)),
-      cell(dashIfNull(t.locked_lp_pct, pct)), cell(t.flags || '', 'ls-l ls-wrap'), cell(t.identified_holders || '', 'ls-l ls-wrap'),
+      cell(dashIfNull(t.locked_lp_pct, pct)), flagCell, cell(t.identified_holders || '', 'ls-l ls-wrap'),
     );
     return tr;
   }));
