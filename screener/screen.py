@@ -114,8 +114,17 @@ def candidates(run):
     return out
 
 
+DOWN_REMOVE_PCT = -90             # Blake's rule (11 Oct 2026): an alert down this much since its first alert leaves the screener
+
+
+def removed(a):
+    """True once an alert has fallen DOWN_REMOVE_PCT or more since its first alert; it is then never tracked again."""
+    ch = a.get("change_since_first_pct")
+    return bool(a.get("removed_at")) or (ch is not None and ch <= DOWN_REMOVE_PCT)
+
+
 def tracked(prev_alerts, as_of):
-    return [a["mint"] for a in prev_alerts if as_of - epoch(a["first_alert_at"]) <= TRACK_DAYS * 86400]
+    return [a["mint"] for a in prev_alerts if as_of - epoch(a["first_alert_at"]) <= TRACK_DAYS * 86400 and not removed(a)]
 
 
 def buster():
@@ -219,7 +228,8 @@ def build_rows(run, p, as_of, prev_alerts, profiles):
             reports[o["mint"]] = o
     track = set(tracked(prev_alerts, as_of))
     rows, lookups, dropped = [], [], []
-    for mint in list(cands) + [m for m in track if m not in cands]:
+    gone = {a["mint"] for a in prev_alerts if removed(a)}
+    for mint in [m for m in cands if m not in gone] + [m for m in track if m not in cands]:
         o = mk.get(mint)
         if not o:
             continue
@@ -323,6 +333,8 @@ def update_alerts(prev, rows, p, as_of, dropped=()):
     for r in rows:
         f = fails(r, p)
         a = by.get(r["mint"])
+        if a is not None and a.get("removed_at"):
+            continue
         if not f and a is None and r["market_cap_usd"]:
             a = by[r["mint"]] = dict(mint=r["mint"], first_alert_at=now, first_alert_cap_usd=r["market_cap_usd"],
                                       first_alert_age=r["age"], triggers=0, latest_alert_at=now,
@@ -348,6 +360,9 @@ def update_alerts(prev, rows, p, as_of, dropped=()):
             a["latest_alert_at"] = now
         a["now"] = "Meets strategy" if not f else "Misses: " + ", ".join(f)
     for a in by.values():
+        if removed(a):
+            a.setdefault("removed_at", now)
+            a["now"] = "Removed: down 90% or more since first alert"
         a["is_new"] = a["first_alert_at"] == now
         for k in ("holders", "top10_wallets_pct", "largest_wallet_pct", "locked_lp_pct", "liquidity_usd", "volume_24h_usd"):
             a.setdefault(k, None)
@@ -423,7 +438,7 @@ def reprice(run, as_of):
     if not os.path.exists(path):
         raise SystemExit("out/alerts.json is missing")
     alerts = json.load(open(path, encoding="utf-8"))
-    mints = [a["mint"] for a in alerts if as_of - epoch(a["first_alert_at"]) <= TRACK_DAYS * 86400]
+    mints = [a["mint"] for a in alerts if as_of - epoch(a["first_alert_at"]) <= TRACK_DAYS * 86400 and not removed(a)]
     best, failed = {}, 0
     for i in range(0, len(mints), 30):
         try:
