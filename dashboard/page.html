@@ -45,6 +45,7 @@
 .ls-traders-l{color:var(--color-ok);font-weight:var(--cds-font-weight-medium)}
 .ls-table td.ls-trader-cell{color:var(--color-ok);font-weight:var(--cds-font-weight-medium)}
 .ls-check{color:var(--color-warn);font-weight:var(--cds-font-weight-medium)}
+.ls-pair{color:var(--color-fg-muted);font-size:var(--cds-font-size-caption);white-space:nowrap}
 .ls-red{color:var(--color-bad);font-weight:var(--cds-font-weight-medium)}
 .ls-alert-foot{display:flex;flex-wrap:wrap;gap:var(--cds-gap-sm);align-items:center;justify-content:space-between;font-size:var(--cds-font-size-caption);color:var(--color-fg-muted)}
 .ls-chart{position:relative;min-height:300px}
@@ -370,6 +371,27 @@ const tokenLink = (mint, text, cls) => {
 // outside links are built only from addresses on the three expected sites
 const safeUrl = (u, starts) => (typeof u === 'string' && starts.some((s) => u.startsWith(s)) ? u : null);
 // thumbnails come only as inline raster images saved by the run; anything else gets the letter fallback
+// what a token trades against, and where it launched / trades (Blake, 11 Oct)
+let tokenByMint = new Map();
+const platformOf = (r) => {
+  const v = String(r.venue || '');
+  if (String(r.mint || '').endsWith('pump') || /pump/i.test(v)) return 'pump.fun';
+  if (/raydium/i.test(v)) return 'Raydium';
+  if (/meteora/i.test(v)) return 'Meteora';
+  return v || '';
+};
+const pairNodes = (r) => {
+  const quote = String(r.quote || (tokenByMint.get(r.mint) || {}).quote || '').slice(0, 20);
+  const out = [];
+  if (quote) out.push(el('span', 'ls-pair', '/ ' + quote));
+  const plat = platformOf(r.venue ? r : {...r, venue: (tokenByMint.get(r.mint) || {}).venue});
+  if (plat) {
+    const p = el('span', 'ls-pill ls-off', plat);
+    p.title = String(r.venue || '');
+    out.push(p);
+  }
+  return out;
+};
 const safeImg = (u) => (typeof u === 'string' && u.length < 40000 && /^data:image\/(?:webp|png|jpeg|gif);base64,[A-Za-z0-9+/]+={0,2}$/.test(u) ? u : null);
 const thumbFor = (a) => {
   const src = safeImg(a.image);
@@ -452,7 +474,7 @@ const drawAlerts = (src, p) => {
     const card = el('article', 'ls-alert' + (a.change_since_first_pct != null && a.change_since_first_pct >= 5 ? ' ls-alert-up' : ''));
     const top = el('div', 'ls-alert-top');
     const name = el('div', 'ls-alert-name');
-    name.append(tokenLink(a.mint, a.symbol, 'ls-link ls-alert-sym'), mark(el('span', 'ls-alert-sub', a.name), a, 'name'));
+    name.append(tokenLink(a.mint, a.symbol, 'ls-link ls-alert-sym'), ...pairNodes(a), mark(el('span', 'ls-alert-sub', a.name), a, 'name'));
     const state = el('div', 'ls-chips');
     if (a.is_new) state.append(el('span', 'ls-pill ls-ok', 'New'));
     if (a.top_traders) state.append(el('span', 'ls-pill ls-ok', 'Top trader'));
@@ -578,7 +600,9 @@ const drawTable = (rows, p) => {
     const res = el('td', 'ls-l');
     res.append(resultPill(t, fails));
     const sym = el('td', 'ls-l');
-    sym.append(tokenLink(t.mint, t.symbol, 'ls-link'));
+    sym.append(tokenLink(t.mint, t.symbol, 'ls-link'), document.createTextNode(' '), ...pairNodes(t).slice(0, 1));
+    const plat = platformOf(t);
+    if (plat) sym.append(el('span', 'ls-pair', ' · ' + plat));
     const lk = el('td', 'ls-l');
     const lkBox = el('div', 'ls-links');
     lkBox.append(...linksFor(t, true));
@@ -679,6 +703,7 @@ const drawChart = (scored, p) => {
 
 function draw() {
   const src = dash.data('tokens'), alerts = dash.data('alerts');
+  tokenByMint = new Map(src.status === 'ok' ? src.data.map((t) => [t.mint, t]) : []);
   const counts = dash.data('screen_counts'), acounts = dash.data('alert_counts');
   const ok = src.status === 'ok';
   const p = params();

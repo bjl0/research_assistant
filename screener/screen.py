@@ -379,7 +379,7 @@ def update_alerts(prev, rows, p, as_of, dropped=()):
             new.append(r)
         if a is None:
             continue
-        a.update(symbol=r["symbol"], name=r["name"], venue=r["venue"],
+        a.update(symbol=r["symbol"], name=r["name"], venue=r["venue"], quote=r.get("quote", ""),
                  dexscreener_url=r.get("dexscreener_url", ""), pumpfun_url=r.get("pumpfun_url", ""))
         if r.get("x_url"):
             a.update(x_url=r["x_url"], x_kind=r["x_kind"])
