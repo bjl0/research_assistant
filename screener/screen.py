@@ -8,6 +8,9 @@
   screen.py images       RUN   after the last build: downloads token thumbnails for the alerts into RUN/out/alerts.json.
                                The one command that goes online itself; if the image site cannot be reached it
                                keeps the thumbnails earlier runs saved and says so.
+  screen.py traders      RUN   marks tokens and alerts in RUN/out held by wallets labelled TOP TRADER in the wallet label
+                               database (RUN/labels/auto/*.json and RUN/labels/labels/*.json, as ArtifactData saves them),
+                               from pump.fun's top-50 holder list per coin (goes online itself). Used by the :45 top-up.
   screen.py reprice      RUN   updates the market cap of every tracked alert in RUN/out/alerts.json straight from
                                DEX Screener (also goes online itself). Used by the :45 top-up between hourly runs.
 
@@ -39,6 +42,8 @@ MAX_PROFILE_LOOKUPS = 20          # new wallet lookups per run
 MIN_LOOKUP_PCT = 1.0              # only look up wallets holding at least this share of supply
 SAME_AMOUNT_DROP = 5              # Blake's rule (11 Oct 2026): if this many top wallets hold the same amount
                                   # (within 3% of each other), the coin is dropped from tokens and alerts entirely
+HOLDERS_URL = "https://frontend-api-v3.pump.fun/coins/top-holders/%s"   # a coin's top 50 holders
+TRADER_CATEGORY = "TOP TRADER"
 PRICE_URL = "https://api.dexscreener.com/tokens/v1/solana/%s"   # up to 30 mints, comma separated
 IMG_URL = "https://dd.dexscreener.com/ds-data/tokens/solana/%s.png"   # redirects to a 64 px thumbnail on cdn.dexscreener.com
 IMG_MAX_BYTES = 12000             # larger answers are skipped, not shrunk
@@ -443,12 +448,60 @@ def reprice(run, as_of):
     print("Prices: %d of %d tracked alerts re-priced." % (len(best), len(mints)))
 
 
+def load_labels(run):
+    """Wallet -> label row, the page's own labels (labels/) overriding the automatic ones (auto/)."""
+    by = {}
+    for sub in ("auto", "labels"):
+        for path in sorted(glob.glob(os.path.join(run, "labels", sub, "*.json"))):
+            d = json.load(open(path, encoding="utf-8"))
+            d = d.get("data", d) if isinstance(d, dict) else d
+            for r in (d.get("rows") if isinstance(d, dict) and "rows" in d else [d]):
+                if isinstance(r, dict) and re.fullmatch(B58, str(r.get("address", ""))):
+                    by[r["address"]] = r
+    return by
+
+
+def mark_traders(run, as_of):
+    traders = {a: r for a, r in load_labels(run).items() if r.get("category") == TRADER_CATEGORY}
+    files = {k: os.path.join(run, "out", k + ".json") for k in ("tokens", "alerts")}
+    data = {k: json.load(open(p, encoding="utf-8")) for k, p in files.items() if os.path.exists(p)}
+    mints = list(dict.fromkeys(r["mint"] for rows in data.values() for r in rows))
+    found, failed = {}, 0
+    for mint in mints:
+        req = urllib.request.Request(HOLDERS_URL % mint, headers={"User-Agent": "Mozilla/5.0 (launch screener)", "Accept": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as f:
+                holders = json.load(f).get("topHolders") or []
+        except Exception:
+            failed += 1
+            continue
+        hits = []
+        for h in holders:
+            t = traders.get(h.get("address"))
+            if not t:
+                continue
+            name = str(t.get("label") or h["address"][:6]).strip()[:40]
+            # pump.fun coins all have a supply of 1 billion; other coins show the name only
+            pct = 100.0 * (num(h.get("amount")) or 0) / 1e9 if mint.endswith("pump") else None
+            hits.append((pct or 0, name if pct is None else "%s %.1f%%" % (name, pct)))
+        found[mint] = " · ".join(t for _, t in sorted(hits, key=lambda x: -x[0]))
+    now = iso(as_of)
+    for k, rows in data.items():
+        for r in rows:
+            if r["mint"] in found:   # a failed lookup keeps what the row had
+                r["top_traders"], r["top_traders_checked_at"] = found[r["mint"]], now
+        json.dump(rows, open(files[k], "w"), ensure_ascii=False, indent=0)
+    print("Traders: %d labelled top traders; %d of %d coins checked, %d held by at least one%s." % (
+        len(traders), len(found), len(mints), sum(1 for v in found.values() if v),
+        (", %d lookups failed" % failed) if failed else ""))
+
+
 def money(v):
     return "n/a" if v is None else ("$%.2fM" % (v / 1e6) if v >= 1e6 else "$%.1fK" % (v / 1e3))
 
 
 def main():
-    if len(sys.argv) != 3 or sys.argv[1] not in ("urls-market", "urls-reports", "build", "images", "reprice"):
+    if len(sys.argv) != 3 or sys.argv[1] not in ("urls-market", "urls-reports", "build", "images", "reprice", "traders"):
         raise SystemExit(__doc__)
     cmd, run = sys.argv[1], sys.argv[2]
     p = get_params(run)
@@ -475,6 +528,9 @@ def main():
         return
     if cmd == "reprice":
         reprice(run, as_of)
+        return
+    if cmd == "traders":
+        mark_traders(run, as_of)
         return
     if cmd == "urls-reports":
         mk = market(run, as_of)

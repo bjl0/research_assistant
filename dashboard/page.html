@@ -40,6 +40,9 @@
 .ls-stat-v{font-family:var(--font-anthropic-serif);font-size:var(--cds-font-size-heading);overflow-wrap:anywhere}
 .ls-up{color:var(--color-ok)}
 .ls-down{color:var(--color-bad)}
+.ls-traders{margin:0;padding:var(--cds-pad-xs) var(--cds-pad-sm);border-left:3px solid var(--color-ok);background:var(--color-panel);font-size:var(--cds-font-size-caption);overflow-wrap:anywhere}
+.ls-traders-l{color:var(--color-ok);font-weight:var(--cds-font-weight-medium)}
+.ls-table td.ls-trader-cell{color:var(--color-ok);font-weight:var(--cds-font-weight-medium)}
 .ls-red{color:var(--color-bad);font-weight:var(--cds-font-weight-medium)}
 .ls-alert-foot{display:flex;flex-wrap:wrap;gap:var(--cds-gap-sm);align-items:center;justify-content:space-between;font-size:var(--cds-font-size-caption);color:var(--color-fg-muted)}
 .ls-chart{position:relative;min-height:300px}
@@ -160,6 +163,7 @@
           <th data-field="largest_wallet_pct"><button class="ls-sort" type="button" data-sort="largest_wallet_pct">Largest wallet</button></th>
           <th data-field="locked_lp_pct"><button class="ls-sort" type="button" data-sort="locked_lp_pct">Locked liquidity</button></th>
           <th class="ls-l" data-field="flags">Flags to read</th>
+          <th class="ls-l" data-field="top_traders">Top traders holding</th>
           <th class="ls-l" data-field="identified_holders">Identified holders</th>
         </tr></thead>
         <tbody id="token-rows"></tbody>
@@ -436,6 +440,7 @@ const drawAlerts = (src, p) => {
     name.append(tokenLink(a.mint, a.symbol, 'ls-link ls-alert-sym'), mark(el('span', 'ls-alert-sub', a.name), a, 'name'));
     const state = el('div', 'ls-chips');
     if (a.is_new) state.append(el('span', 'ls-pill ls-ok', 'New'));
+    if (a.top_traders) state.append(el('span', 'ls-pill ls-ok', 'Top trader'));
     state.append(mark(el('span', 'ls-pill ' + (a.now === 'Meets strategy' ? 'ls-ok' : 'ls-off'), a.now || 'Not in the last run'), a, 'now'));
     const who = el('div', 'ls-alert-who');
     who.append(thumbFor(a), name);
@@ -473,7 +478,13 @@ const drawAlerts = (src, p) => {
     if (!holders.childNodes.length) holders.append(el('span', 'ls-chip', 'No holders identified yet'));
     holders.setAttribute('data-source', 'alerts');
 
-    card.append(top, chips, links, stats, el('span', 'ls-stat-l', 'Identified holders'), holders);
+    card.append(top, chips, links);
+    if (a.top_traders) {
+      const tt = el('p', 'ls-traders');
+      tt.append(el('span', 'ls-traders-l', 'Top traders holding: '), mark(el('span', null, a.top_traders), a, 'top_traders'));
+      card.append(tt);
+    }
+    card.append(stats, el('span', 'ls-stat-l', 'Identified holders'), holders);
     if (a.flags) {
       const fl = el('p', 'ls-note');
       const fs = mark(el('span'), a, 'flags');
@@ -513,7 +524,7 @@ const drawTable = (rows, p) => {
   if (!sorted.length) {
     const tr = document.createElement('tr');
     const td = cell(p.view === 'matches' ? 'No token meets every limit right now. Loosen a limit above, or look at the ones that miss by one.' : 'Nothing to show in this view.', 'ls-empty');
-    td.colSpan = 16;
+    td.colSpan = 17;
     tr.append(td);
     body.replaceChildren(tr);
     return;
@@ -536,7 +547,7 @@ const drawTable = (rows, p) => {
       cell(dashIfNull(t.liquidity_usd, usd)), cell(dashIfNull(t.market_cap_usd, usd)), cell(dashIfNull(t.volume_24h_usd, usd)),
       cell(dashIfNull(t.vol_to_liq, (v) => one(v) + '×')), cell(dashIfNull(t.buy_share_pct, pct)),
       cell(dashIfNull(t.holders, int)), cell(dashIfNull(t.top10_wallets_pct, pct)), cell(dashIfNull(t.largest_wallet_pct, pct)),
-      cell(dashIfNull(t.locked_lp_pct, pct)), flagCell, cell(t.identified_holders || '', 'ls-l ls-wrap'),
+      cell(dashIfNull(t.locked_lp_pct, pct)), flagCell, cell(t.top_traders || '', 'ls-l ls-wrap' + (t.top_traders ? ' ls-trader-cell' : '')), cell(t.identified_holders || '', 'ls-l ls-wrap'),
     );
     return tr;
   }));
