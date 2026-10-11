@@ -46,6 +46,7 @@ The old session wrote these with the `Artifact` and `ArtifactData` tools. **Firs
 - DEX Screener: `https://api.dexscreener.com/token-profiles/latest/v1`, `/token-boosts/latest/v1`, `/token-boosts/top/v1` for candidates, `/tokens/v1/solana/<mint,mint,...>` for market data.
 - RugCheck: `https://api.rugcheck.xyz/v1/tokens/<mint>/report` for holders, liquidity locks and risk flags.
 - pump.fun: `https://frontend-api-v3.pump.fun/users/<wallet>` for the profile name behind a large holder wallet.
+- GMGN (on hold, 11 October): gmgn.ai's website API is blocked by Cloudflare bot protection, but the official Agent API at `https://openapi.gmgn.ai` (`/v1/token/info`, `/v1/token/security`, `/v1/market/token_top_holders` with sniper/bundler/insider/smart-money tags, `/v1/market/rank`, `/v1/user/created_tokens`, and more; see the `gmgn-cli` npm package) is reachable from the Claude Code environment. Read-only calls need only an API key (`X-APIKEY` header plus `timestamp` and `client_id` query values), never a private key. Blake must create the key at https://gmgn.ai/ai (his account first needs a $100 balance) and store it in the environment settings as `GMGN_API_KEY`; never ask for it in chat or put it in the dashboard store. An Ed25519 public key was generated for the sign-up and its private half destroyed.
 - Not usable: GoPlus (rejects the Token-2022 mints pump.fun creates), CoinGecko and GeckoTerminal (their robots rules disallow fetching).
 
 ## Why the project moved, and the open work
