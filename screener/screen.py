@@ -119,8 +119,8 @@ DOWN_REMOVE_PCT = -90             # Blake's rules (11 Oct 2026): a token leaves 
 MIN_CAP_USD = 10000               # since its first alert or from its all-time high, or its market cap falls under $10K
 
 
-VOL_LIQ_MAX = 30                  # Blake's trial labels (11 Oct 2026), shown but never used to hide or block:
-BUY_SHARE_BAND = (45, 60)         # 24h volume over 30x liquidity, buys outside 45-60% of trades, first trigger only
+VOL_LIQ_MAX = 20                  # Blake's trial labels (11 Oct 2026), shown but never used to hide or block:
+BUY_SHARE_BAND = (45, 60)         # 24h volume over 20x liquidity, buys outside 45-60% of trades, first trigger only
 SNAPSHOT_FIELDS = ("age_hours", "market_cap_usd", "liquidity_usd", "volume_24h_usd", "volume_1h_usd", "vol_to_liq",
                    "buys_24h", "sells_24h", "buy_share_pct", "change_1h_pct", "change_24h_pct", "holders", "top10_pct",
                    "top10_wallets_pct", "largest_wallet_pct", "creator_pct", "locked_lp_pct", "linked_wallets",
