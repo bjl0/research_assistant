@@ -36,6 +36,7 @@ The old session wrote these with the `Artifact` and `ArtifactData` tools. **Firs
 
 - `screener/screen.py`: the pipeline. Three commands (`urls-market`, `urls-reports`, `build`), each taking a run folder. Its docstring lists the input files it expects. It does no network access itself: it prints URLs, something else fetches them and saves the answers, and it builds the data files.
 - `dashboard/page.html`: the dashboard page as published (version 3).
+- **Same-amount rule** (Blake, 11 October 2026): if 5 or more of a coin's top wallets (pools and lockers excluded) hold the same amount, within 3% of each other, `screen.py` drops the coin from tokens and alerts entirely, including earlier alerts, and lists it on a "Filtered out" line in the run summary. Constant `SAME_AMOUNT_DROP`; it is a script rule, not a `dash/params` limit. Only holder-checked coins (up to 25 per run, 12 top holders each) can be tested.
 - `dashboard/params.json`: the saved limits. Age up to 7 days, liquidity and 24h volume at least $10,000, at least 500 holders, top-10 wallets at most 30%, largest wallet at most 10%, at least 90% of liquidity locked, no danger flags.
 - `data/tokens.json`, `data/alerts.json`, `data/profiles.json`: snapshot of the dashboard's data after the 3:24 pm ET run on 10 October (61 tokens, 19 alerts). The live copies are in the dashboard; these are for reference and testing.
 
