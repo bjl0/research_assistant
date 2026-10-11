@@ -42,6 +42,7 @@ MAX_PROFILE_LOOKUPS = 20          # new wallet lookups per run
 MIN_LOOKUP_PCT = 1.0              # only look up wallets holding at least this share of supply
 SAME_AMOUNT_DROP = 5              # Blake's rule (11 Oct 2026): if this many top wallets hold the same amount
                                   # (within 3% of each other), the coin is dropped from tokens and alerts entirely
+COIN_URL = "https://frontend-api-v3.pump.fun/coins-v2/%s"   # carries the coin's all-time-high market cap (ath_market_cap, USD)
 HOLDERS_URL = "https://frontend-api-v3.pump.fun/coins/top-holders/%s"   # a coin's top 50 holders
 TRADER_CATEGORY = "TOP TRADER"
 PRICE_URL = "https://api.dexscreener.com/tokens/v1/solana/%s"   # up to 30 mints, comma separated
@@ -459,8 +460,24 @@ def reprice(run, as_of):
         mc = best[a["mint"]][1]
         a.update(latest_cap_usd=mc, latest_cap_at=now, peak_cap_usd=max(a.get("peak_cap_usd") or 0, mc),
                  change_since_first_pct=round(100.0 * (mc / a["first_alert_cap_usd"] - 1), 1) if a.get("first_alert_cap_usd") else None)
+    aths = 0
+    for a in alerts:
+        if a["mint"] not in mints:
+            continue
+        req = urllib.request.Request(COIN_URL % a["mint"], headers={"User-Agent": "Mozilla/5.0 (launch screener)", "Accept": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as f:
+                coin = json.load(f)
+        except Exception:
+            continue   # keeps the last ATH
+        ath, ts = num(coin.get("ath_market_cap")), num(coin.get("ath_market_cap_timestamp"))
+        if ath:
+            # never below a cap the screener itself has seen
+            a["ath_cap_usd"] = round(max(ath, a.get("peak_cap_usd") or 0, a.get("latest_cap_usd") or 0), 2)
+            a["ath_at"] = iso(ts / 1000) if ts else ""
+            aths += 1
     json.dump(alerts, open(path, "w"), ensure_ascii=False, indent=0)
-    print("Prices: %d of %d tracked alerts re-priced." % (len(best), len(mints)))
+    print("Prices: %d of %d tracked alerts re-priced; all-time high found for %d." % (len(best), len(mints), aths))
 
 
 def load_labels(run):

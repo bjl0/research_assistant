@@ -34,7 +34,7 @@
 .ls-chips{display:flex;flex-wrap:wrap;gap:var(--cds-gap-xs);font-size:var(--cds-font-size-caption)}
 .ls-chip{border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:0 var(--cds-pad-sm);color:var(--color-fg-muted);overflow-wrap:anywhere}
 .ls-links{display:flex;flex-wrap:wrap;gap:var(--cds-gap-md);font-size:var(--cds-font-size-caption)}
-.ls-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--cds-gap-sm);border-block:1px solid var(--color-border-line);padding-block:var(--cds-pad-sm)}
+.ls-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,6rem),1fr));gap:var(--cds-gap-sm);border-block:1px solid var(--color-border-line);padding-block:var(--cds-pad-sm)}
 .ls-stat{display:flex;flex-direction:column;gap:2px;min-width:0}
 .ls-stat-l{color:var(--color-fg-muted);font-size:var(--cds-font-size-caption)}
 .ls-stat-v{font-family:var(--font-anthropic-serif);font-size:var(--cds-font-size-heading);overflow-wrap:anywhere}
@@ -471,11 +471,19 @@ const drawAlerts = (src, p) => {
       return s;
     };
     const change = a.change_since_first_pct;
+    const athNote = el('span', 'ls-stat-l');
+    // a cap above the stored high (set between checks) is the new high
+    const ath = a.ath_cap_usd ? Math.max(a.ath_cap_usd, a.latest_cap_usd || 0) : null;
+    if (ath && a.latest_cap_usd) {
+      const off = 100 * (a.latest_cap_usd / ath - 1);
+      athNote.textContent = (off > -0.5 ? 'At its high' : `${one(off)}% from high`) + (a.ath_at ? ', ' + when(a.ath_at) : '');
+    } else if (a.ath_at) athNote.textContent = when(a.ath_at);
     const priced = el('span', 'ls-stat-l');
     priced.append(document.createTextNode('Priced '), mark(el('span', null, a.latest_cap_at ? when(a.latest_cap_at) : '—'), a, 'latest_cap_at'));
     stats.append(
       stat('First alert cap', mark(el('span', 'ls-stat-v', dashIfNull(a.first_alert_cap_usd, usd)), a, 'first_alert_cap_usd')),
       stat('Latest cap', mark(el('span', 'ls-stat-v', dashIfNull(a.latest_cap_usd, usd)), a, 'latest_cap_usd'), priced),
+      stat('All-time high', mark(el('span', 'ls-stat-v', dashIfNull(ath, usd)), a, 'ath_cap_usd'), athNote),
       stat('Cap since first alert', mark(el('span', 'ls-stat-v ' + (change == null ? '' : change >= 0 ? 'ls-up' : 'ls-down'), dashIfNull(change, (v) => signed(v) + '%')), a, 'change_since_first_pct')),
     );
 
