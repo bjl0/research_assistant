@@ -37,6 +37,8 @@ TRACK_DAYS = 14                   # keep re-pricing an alerted token for this lo
 MAX_REPORTS = 25                  # holder reports per run, deepest pools first
 MAX_PROFILE_LOOKUPS = 20          # new wallet lookups per run
 MIN_LOOKUP_PCT = 1.0              # only look up wallets holding at least this share of supply
+SAME_AMOUNT_DROP = 5              # Blake's rule (11 Oct 2026): if this many top wallets hold the same amount
+                                  # (within 3% of each other), the coin is dropped from tokens and alerts entirely
 PRICE_URL = "https://api.dexscreener.com/tokens/v1/solana/%s"   # up to 30 mints, comma separated
 IMG_URL = "https://dd.dexscreener.com/ds-data/tokens/solana/%s.png"   # redirects to a 64 px thumbnail on cdn.dexscreener.com
 IMG_MAX_BYTES = 12000             # larger answers are skipped, not shrunk
@@ -159,6 +161,7 @@ def fails(r, p):
     if r["largest_wallet_pct"] > p["max_wallet"]: f.append("largest wallet")
     if r["locked_lp_pct"] is None or r["locked_lp_pct"] < p["min_locked"]: f.append("locked liquidity")
     if p["no_danger"] and r["danger"]: f.append("danger flag")
+    if r.get("identity_checks") == "No wallet holds 1% or more": f.append("no wallet at 1%")   # Blake's rule, 11 Oct 2026
     return f
 
 
@@ -210,7 +213,7 @@ def build_rows(run, p, as_of, prev_alerts, profiles):
         if isinstance(o, dict) and o.get("mint") and o.get("topHolders"):
             reports[o["mint"]] = o
     track = set(tracked(prev_alerts, as_of))
-    rows, lookups = [], []
+    rows, lookups, dropped = [], [], []
     for mint in list(cands) + [m for m in track if m not in cands]:
         o = mk.get(mint)
         if not o:
@@ -250,6 +253,9 @@ def build_rows(run, p, as_of, prev_alerts, profiles):
             sup, cb = num(rep.get("supply")), num(rep.get("creatorBalance")) or 0
             creator_pct = 100.0 * cb / sup if sup else 0.0
             look = lookalikes([t[1] for t in nonpool])
+            if look >= SAME_AMOUNT_DROP:
+                dropped.append(dict(mint=mint, symbol=r["symbol"], wallets=look))
+                continue
             risks = rep.get("risks") or []
             mint_auth, freeze_auth = rep.get("mintAuthority"), rep.get("freezeAuthority")
             fee = num(rep.get("transferFeePct")) or 0
@@ -266,7 +272,6 @@ def build_rows(run, p, as_of, prev_alerts, profiles):
             for t in pools:
                 if t is not main and t[1] >= 5:
                     flags.append("%.1f%% of supply sits in a %s" % (t[1], t[3] or "second pool"))
-            if look >= 5: flags.append("%d top wallets hold near-identical amounts" % look)
             ins = int(num(rep.get("graphInsidersDetected")) or 0)
             if ins >= 20: flags.append("%d linked wallets (RugCheck)" % ins)
             tml = num(rep.get("totalMarketLiquidity"))
@@ -297,12 +302,13 @@ def build_rows(run, p, as_of, prev_alerts, profiles):
                 identity_checks=("%d of %d top wallets looked up" % (checked, len(wallets))) if wallets else "No wallet holds 1% or more",
             )
         rows.append(r)
-    return rows, lookups
+    return rows, lookups, dropped
 
 
-def update_alerts(prev, rows, p, as_of):
-    """One row per token that has ever met the strategy."""
-    by = {a["mint"]: dict(a) for a in prev}
+def update_alerts(prev, rows, p, as_of, dropped=()):
+    """One row per token that has ever met the strategy, minus coins dropped by the same-amount rule."""
+    gone = {d["mint"] for d in dropped}
+    by = {a["mint"]: dict(a) for a in prev if a["mint"] not in gone}
     now = iso(as_of)
     new = []
     seen = {r["mint"] for r in rows}
@@ -490,8 +496,8 @@ def main():
             nm = o.get("username")
             profiles[o["address"]] = dict(wallet=o["address"], username=nm if isinstance(nm, str) and nm.strip() else None,
                                           followers=num(o.get("followers")), checked_at=iso(as_of))
-    rows, lookups = build_rows(run, p, as_of, prev_alerts, profiles)
-    alerts, new = update_alerts(prev_alerts, rows, p, as_of)
+    rows, lookups, dropped = build_rows(run, p, as_of, prev_alerts, profiles)
+    alerts, new = update_alerts(prev_alerts, rows, p, as_of, dropped)
     alerted = {a["mint"] for a in alerts}
     want, seen = [], set()
     for mint, owner, pct in sorted(lookups, key=lambda t: -t[2]):
@@ -512,6 +518,9 @@ def main():
             r["top10_wallets_pct"], r["largest_wallet_pct"], ("; flags: " + r["flags"]) if r["flags"] else ""))
     if not new:
         lines.append("No new matches this run.")
+    if dropped:
+        lines.append("Filtered out %d coin(s) where %d or more top wallets hold the same amount: %s" % (
+            len(dropped), SAME_AMOUNT_DROP, ", ".join("%s (%d wallets)" % (d["symbol"], d["wallets"]) for d in dropped)))
     open(os.path.join(out, "summary.txt"), "w").write("\n".join(lines) + "\n")
     print("\n".join(lines))
     if want:
