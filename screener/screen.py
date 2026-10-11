@@ -278,7 +278,7 @@ def build_rows(run, p, as_of, prev_alerts, profiles):
                 if t is not main and t[1] >= 5:
                     flags.append("%.1f%% of supply sits in a %s" % (t[1], t[3] or "second pool"))
             ins = int(num(rep.get("graphInsidersDetected")) or 0)
-            if ins >= 20: flags.append("%d linked wallets (RugCheck)" % ins)
+            if ins >= 5: flags.append("%d linked wallets (RugCheck)" % ins)   # Blake: shown in red from 5
             tml = num(rep.get("totalMarketLiquidity"))
             locked = None
             if tml:

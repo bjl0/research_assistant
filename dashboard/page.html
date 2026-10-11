@@ -206,6 +206,8 @@ const $ = (s) => document.querySelector(s);
 const DEFAULTS = {max_age_days: 7, min_liq: 10000, min_vol: 10000, min_holders: 500, max_top10: 30, max_wallet: 10, min_locked: 90, no_danger: true, view: 'matches', alert_view: 'all'};
 const NO_BIG_WALLET = 'No wallet holds 1% or more';
 const SAME_AMOUNTS = /^\d+ top wallets hold near-identical amounts$/;
+const LINKED = /^(\d+) linked wallets \(RugCheck\)$/;   // red from 5 linked wallets
+const redFlag = (f) => SAME_AMOUNTS.test(f) || (LINKED.test(f) && Number(f.match(LINKED)[1]) >= 5);
 const walletWarning = (r) => r.identity_checks === NO_BIG_WALLET || (r.lookalike_wallets || 0) >= 5
   || String(r.flags || '').split('; ').some((f) => SAME_AMOUNTS.test(f));
 const usd = d3.format('$,.0f'), int = d3.format(','), one = d3.format('.1f'), signed = d3.format('+,.1f');
@@ -400,7 +402,7 @@ const flagNodes = (s) => {
   const out = [];
   String(s || '').split('; ').filter(Boolean).forEach((f, i) => {
     if (i) out.push(document.createTextNode('; '));
-    out.push(SAME_AMOUNTS.test(f) ? el('span', 'ls-red', f) : document.createTextNode(f));
+    out.push(redFlag(f) ? el('span', 'ls-red', f) : document.createTextNode(f));
   });
   return out;
 };
