@@ -159,6 +159,7 @@
           <th data-field="peak_gain_pct"><button class="ls-sort" type="button" data-up5-sort="peak_gain_pct">Peak gain since alert</button></th>
           <th data-field="change_since_first_pct"><button class="ls-sort" type="button" data-up5-sort="change_since_first_pct">Now vs first alert</button></th>
           <th data-field="first_alert_cap_usd"><button class="ls-sort" type="button" data-up5-sort="first_alert_cap_usd">First alert cap</button></th>
+          <th data-field="max_drawdown_pct"><button class="ls-sort" type="button" data-up5-sort="max_drawdown_pct">Max drawdown from alert</button></th>
           <th data-field="peak_cap_usd"><button class="ls-sort" type="button" data-up5-sort="peak_cap_usd">Peak cap</button></th>
           <th data-field="latest_cap_usd"><button class="ls-sort" type="button" data-up5-sort="latest_cap_usd">Latest cap</button></th>
           <th data-field="ath_cap_usd"><button class="ls-sort" type="button" data-up5-sort="ath_cap_usd">All-time high</button></th>
@@ -546,13 +547,28 @@ const drawAlerts = (src, p) => {
       const off = 100 * (a.latest_cap_usd / ath - 1);
       athNote.textContent = (off > -0.5 ? 'At its high' : `${one(off)}% from high`) + (a.ath_at ? ', ' + when(a.ath_at) : '');
     } else if (a.ath_at) athNote.textContent = when(a.ath_at);
+    // beside the cap since first alert (Blake, 12 Oct): the gain to the all-time high when that high came after the alert,
+    // and the deepest fall below the first-alert cap
+    const sinceNote = el('div', 'ls-stat-l');
+    if (typeof a.ath_gain_pct === 'number') {
+      const l = el('div');
+      l.title = 'Gain from the first-alert cap to the all-time high, shown only when the high was set after the alert';
+      l.append(document.createTextNode('To all-time high '), mark(el('span', null, signed(a.ath_gain_pct) + '%'), a, 'ath_gain_pct'));
+      sinceNote.append(l);
+    }
+    if (typeof a.max_drawdown_pct === 'number') {
+      const l = el('div');
+      l.title = 'Lowest market cap since the first alert, compared with the first-alert cap';
+      l.append(document.createTextNode('Max drawdown '), mark(el('span', null, one(a.max_drawdown_pct) + '%'), a, 'max_drawdown_pct'));
+      sinceNote.append(l);
+    }
     const priced = el('span', 'ls-stat-l');
     priced.append(document.createTextNode('Priced '), mark(el('span', null, a.latest_cap_at ? when(a.latest_cap_at) : '—'), a, 'latest_cap_at'));
     stats.append(
       stat('First alert cap', mark(el('span', 'ls-stat-v', dashIfNull(a.first_alert_cap_usd, usd)), a, 'first_alert_cap_usd')),
       stat('Latest cap', mark(el('span', 'ls-stat-v', dashIfNull(a.latest_cap_usd, usd)), a, 'latest_cap_usd'), priced),
       stat('All-time high', mark(el('span', 'ls-stat-v', dashIfNull(ath, usd)), a, 'ath_cap_usd'), athNote),
-      stat('Cap since first alert', mark(el('span', 'ls-stat-v ' + (change == null ? '' : change >= 0 ? 'ls-up' : 'ls-down'), dashIfNull(change, (v) => signed(v) + '%')), a, 'change_since_first_pct')),
+      stat('Cap since first alert', mark(el('span', 'ls-stat-v ' + (change == null ? '' : change >= 0 ? 'ls-up' : 'ls-down'), dashIfNull(change, (v) => signed(v) + '%')), a, 'change_since_first_pct'), sinceNote),
     );
 
     const holders = el('div', 'ls-chips');
@@ -677,7 +693,7 @@ const drawUp5 = (src, p) => {
   const note = (text) => {
     const tr = document.createElement('tr');
     const td = cell(text, 'ls-empty');
-    td.colSpan = 17;
+    td.colSpan = 18;
     tr.append(td);
     body.replaceChildren(tr);
   };
@@ -695,7 +711,7 @@ const drawUp5 = (src, p) => {
     return up5Dir * (x - y);
   });
   const gone = rows.filter((a) => a.removed_at).length;
-  $('#up5-note').textContent = `${int(rows.length)} ${rows.length === 1 ? 'token has' : 'tokens have'} gone 5% or more above ${rows.length === 1 ? 'its' : 'their'} market cap at the first alert. They are saved for good: ${int(gone)} of them have since been taken off the main list by your removal rules, and still show here. “Peak” is the highest cap the screener has recorded since the alert, including pump.fun's own record when it was set after the alert.`;
+  $('#up5-note').textContent = `${int(rows.length)} ${rows.length === 1 ? 'token has' : 'tokens have'} gone 5% or more above ${rows.length === 1 ? 'its' : 'their'} market cap at the first alert. They are saved for good: ${int(gone)} of them have since been taken off the main list by your removal rules, and still show here. “Peak” and “max drawdown” come from pump.fun's price history since the alert: the highest cap reached, and the lowest cap compared with the first-alert cap.`;
   if (!rows.length) return note('No token has gone up 5% or more since its alert yet.');
   body.replaceChildren(...rows.map((a) => {
     const tr = document.createElement('tr');
@@ -718,6 +734,7 @@ const drawUp5 = (src, p) => {
       sym, cell(a.name, 'ls-l'), lk,
       cell(dashIfNull(peak, (v) => signed(v) + '%'), 'ls-up'),
       cell(dashIfNull(now, (v) => signed(v) + '%'), now == null ? undefined : now >= 0 ? 'ls-up' : 'ls-down'),
+      cell(dashIfNull(a.max_drawdown_pct, (v) => one(v) + '%')),
       cell(dashIfNull(a.first_alert_cap_usd, usd)), cell(dashIfNull(a.peak_cap_usd, usd)), cell(dashIfNull(a.latest_cap_usd, usd)),
       cell(dashIfNull(a.ath_cap_usd, usd)), cell(a.first_alert_at ? when(a.first_alert_at) : '—'),
       cell(dashIfNull(a.liquidity_usd, usd)), cell(dashIfNull(a.volume_24h_usd, usd)), cell(dashIfNull(a.holders, int)),

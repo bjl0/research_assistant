@@ -24,7 +24,7 @@ RUN/ holds
   in/report_*.json     one compact object per token
   in/profile_*.json    one compact object per wallet
 """
-import sys, os, re, json, glob, random, string, base64, urllib.request, urllib.error, datetime as dt
+import sys, os, re, json, glob, random, string, base64, time, urllib.request, urllib.error, datetime as dt
 
 B58 = r"[1-9A-HJ-NP-Za-km-z]{32,44}"
 X_URL = re.compile(r"https://(?:x|twitter)\.com/[A-Za-z0-9_./?=&%+\-]+")   # only plain X links are kept
@@ -43,6 +43,8 @@ MIN_LOOKUP_PCT = 1.0              # only look up wallets holding at least this s
 SAME_AMOUNT_DROP = 5              # Blake's rule (11 Oct 2026): if this many top wallets hold the same amount
                                   # (within 3% of each other), the coin is dropped from tokens and alerts entirely
 COIN_URL = "https://frontend-api-v3.pump.fun/coins-v2/%s"   # carries the coin's all-time-high market cap (ath_market_cap, USD)
+CANDLES_URL = "https://swap-api.pump.fun/v2/coins/%s/candles?interval=%s&limit=1000&currency=USD&createdTs=0"   # newest 1000 candles
+CANDLE_SUPPLY = 1e9               # USD price x 1 billion = market cap (checked against the caps the screener recorded)
 HOLDERS_URL = "https://frontend-api-v3.pump.fun/coins/top-holders/%s"   # a coin's top 50 holders
 TRADER_CATEGORY = "TOP TRADER"
 PRICE_URL = "https://api.dexscreener.com/tokens/v1/solana/%s"   # up to 30 mints, comma separated
@@ -165,6 +167,24 @@ def mark_winner(a, now):
     a["peak_gain_pct"] = g
     if g >= UP_SAVE_PCT and not a.get("went_up_5_at"):
         a["went_up_5_at"] = now
+
+
+def derive_extremes(a):
+    """Lowest cap since the alert (so the max drawdown from the alert) and, when the all-time high came after the alert,
+    its gain over the first-alert cap. Blake, 12 Oct: show both beside the cap since first alert."""
+    f = a.get("first_alert_cap_usd")
+    if not f:
+        return
+    seen = [x for x in (a.get("trough_cap_usd"), a.get("latest_cap_usd"), f) if x]
+    a["trough_cap_usd"] = round(min(seen), 2)                    # never above the alert cap, so the drawdown is 0 or negative
+    a["max_drawdown_pct"] = round(100.0 * (a["trough_cap_usd"] / f - 1), 1)
+    ath, peak = a.get("ath_cap_usd"), a.get("peak_cap_usd") or 0
+    if ath:
+        ath = max(ath, peak)
+        a["ath_cap_usd"] = round(ath, 2)
+        came_after = bool(a.get("ath_at")) and a["ath_at"] >= a["first_alert_at"]
+        # the high was set before the alert when pump.fun dates it earlier and nothing since the alert came close
+        a["ath_gain_pct"] = round(100.0 * (ath / f - 1), 1) if (came_after or peak >= 0.98 * ath) else None
 
 
 def removal_reason(a):
@@ -429,6 +449,7 @@ def update_alerts(prev, rows, p, as_of, dropped=()):
         if a["mint"] in gone and not a.get("removed_at"):
             a["removed_at"], a["removed_reason"] = now, "5 or more top wallets hold the same amount"
         mark_winner(a, now)
+        derive_extremes(a)
         why = removal_reason(a)
         if why:
             a.setdefault("removed_reason", why)
@@ -506,6 +527,30 @@ def fetch_pairs(mints):
         return json.load(f)
 
 
+def candle_extremes(a, as_of):
+    """(highest cap, lowest cap) since the alert from pump.fun's price candles, or None. A wrong-sized supply would distort
+    everything, so the candles must agree with the caps the screener recorded, or the coin is skipped."""
+    t0 = epoch(a["first_alert_at"])
+    age = as_of - t0
+    interval, secs = ("5m", 300) if age <= 80 * 3600 else ("15m", 900) if age <= 240 * 3600 else ("1h", 3600)
+    req = urllib.request.Request(CANDLES_URL % (a["mint"], interval), headers={"User-Agent": "Mozilla/5.0 (launch screener)", "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=25) as f:
+            candles = json.load(f)
+        rows = [(c["timestamp"] / 1000.0, float(c["high"]) * CANDLE_SUPPLY, float(c["low"]) * CANDLE_SUPPLY, float(c["close"]) * CANDLE_SUPPLY) for c in candles]
+    except Exception:
+        return None
+    if not rows:
+        return None
+    cont = [r for r in rows if r[0] <= t0 < r[0] + secs]
+    first, latest = a.get("first_alert_cap_usd"), a.get("latest_cap_usd")
+    agrees = bool(cont and first and cont[0][2] * 0.5 <= first <= cont[0][1] * 1.5) or bool(latest and 0.5 <= rows[-1][3] / latest <= 2)
+    after = [r for r in rows if r[0] >= t0]
+    if not agrees or not after:
+        return None
+    return max(r[1] for r in after), min(r[2] for r in after)
+
+
 def reprice(run, as_of):
     """Latest market cap for alerts still tracked, from the deepest pool of each token."""
     path = os.path.join(run, "out", "alerts.json")
@@ -535,8 +580,8 @@ def reprice(run, as_of):
                  change_since_first_pct=round(100.0 * (mc / a["first_alert_cap_usd"] - 1), 1) if a.get("first_alert_cap_usd") else None)
     aths = 0
     for a in alerts:
-        if a["mint"] not in mints:
-            continue
+        if a["mint"] not in mints and a.get("ath_cap_usd"):
+            continue   # no longer tracked; rows that never got an all-time high are filled in once
         req = urllib.request.Request(COIN_URL % a["mint"], headers={"User-Agent": "Mozilla/5.0 (launch screener)", "Accept": "application/json"})
         try:
             with urllib.request.urlopen(req, timeout=15) as f:
@@ -549,11 +594,24 @@ def reprice(run, as_of):
             a["ath_cap_usd"] = round(max(ath, a.get("peak_cap_usd") or 0, a.get("latest_cap_usd") or 0), 2)
             a["ath_at"] = iso(ts / 1000) if ts else ""
             aths += 1
+    candled = 0
+    for a in alerts:
+        if a["mint"] not in mints and a.get("candles_at"):
+            continue   # no longer tracked and already measured from its candles once
+        ext = candle_extremes(a, as_of)
+        time.sleep(0.1)
+        if ext:
+            hi, lo = ext
+            a["peak_cap_usd"] = round(max(a.get("peak_cap_usd") or 0, hi), 2)
+            a["trough_cap_usd"] = round(min(x for x in (a.get("trough_cap_usd"), lo) if x), 2)
+            a["candles_at"] = now
+            candled += 1
     for a in alerts:
         mark_winner(a, now)
+        derive_extremes(a)
     json.dump(alerts, open(path, "w"), ensure_ascii=False, indent=0)
-    print("Prices: %d of %d tracked alerts re-priced; all-time high found for %d; %d saved as up %d%%+ since alert." % (
-        len(best), len(mints), aths, sum(1 for a in alerts if kept(a)), UP_SAVE_PCT))
+    print("Prices: %d of %d tracked alerts re-priced; all-time high found for %d; highs and lows from candles for %d; %d saved as up %d%%+ since alert." % (
+        len(best), len(mints), aths, candled, sum(1 for a in alerts if kept(a)), UP_SAVE_PCT))
 
 
 def load_labels(run):
