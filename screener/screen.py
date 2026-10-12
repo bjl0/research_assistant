@@ -138,6 +138,35 @@ def trial_labels(r):
     return out
 
 
+UP_SAVE_PCT = 5                   # Blake's rule (12 Oct 2026): a token that has ever been this far above its first-alert cap is
+MAX_ALERT_ROWS = 200              # saved for good: never dropped by the row cap or the same-amount rule, kept even when removed
+
+
+def peak_gain(a):
+    """Highest gain over the first-alert market cap, in percent, or None."""
+    f, p = a.get("first_alert_cap_usd"), a.get("peak_cap_usd")
+    return None if not f or not p else round(100.0 * (p / f - 1), 1)
+
+
+def kept(a):
+    """Saved for good: noticed up 5%+ before, or its recorded peak is. A peak never falls, so this never reverses."""
+    return bool(a.get("went_up_5_at")) or (peak_gain(a) or 0) >= UP_SAVE_PCT
+
+
+def mark_winner(a, now):
+    """Records the peak gain and, the first time it reaches UP_SAVE_PCT, when the screener noticed. Never unset."""
+    if a["mint"].endswith("pump") and a.get("ath_at") and a.get("ath_cap_usd") and a["ath_at"] >= a["first_alert_at"]:
+        # pump.fun measures its coins the same way DEX Screener does, so a high set after the alert is a real peak, even
+        # when it fell between two of the screener's own price checks (it can be 2-3x what the :24/:45 checks saw)
+        a["peak_cap_usd"] = round(max(a.get("peak_cap_usd") or 0, a["ath_cap_usd"]), 2)
+    g = peak_gain(a)
+    if g is None:
+        return
+    a["peak_gain_pct"] = g
+    if g >= UP_SAVE_PCT and not a.get("went_up_5_at"):
+        a["went_up_5_at"] = now
+
+
 def removal_reason(a):
     """Why an alert has left the screener, or '' if it has not. Once removed it is never tracked again."""
     if a.get("removed_at"):
@@ -358,7 +387,7 @@ def build_rows(run, p, as_of, prev_alerts, profiles):
 def update_alerts(prev, rows, p, as_of, dropped=()):
     """One row per token that has ever met the strategy, minus coins dropped by the same-amount rule."""
     gone = {d["mint"] for d in dropped}
-    by = {a["mint"]: dict(a) for a in prev if a["mint"] not in gone}
+    by = {a["mint"]: dict(a) for a in prev if a["mint"] not in gone or kept(a)}
     now = iso(as_of)
     new = []
     seen = {r["mint"] for r in rows}
@@ -397,6 +426,9 @@ def update_alerts(prev, rows, p, as_of, dropped=()):
             a["latest_alert_at"] = now
         a["now"] = "Meets strategy" if not f else "Misses: " + ", ".join(f)
     for a in by.values():
+        if a["mint"] in gone and not a.get("removed_at"):
+            a["removed_at"], a["removed_reason"] = now, "5 or more top wallets hold the same amount"
+        mark_winner(a, now)
         why = removal_reason(a)
         if why:
             a.setdefault("removed_reason", why)
@@ -409,7 +441,10 @@ def update_alerts(prev, rows, p, as_of, dropped=()):
                   "image", "image_checked_at"):
             a.setdefault(k, "")
         a["as_of"] = now
-    out = sorted(by.values(), key=lambda a: a["first_alert_at"], reverse=True)[:200]
+    newest = sorted(by.values(), key=lambda a: a["first_alert_at"], reverse=True)
+    saved = [a for a in newest if kept(a)]
+    rest = [a for a in newest if not kept(a)][:max(0, MAX_ALERT_ROWS - len(saved))]
+    out = sorted(saved + rest, key=lambda a: a["first_alert_at"], reverse=True)
     return out, new
 
 
@@ -514,8 +549,11 @@ def reprice(run, as_of):
             a["ath_cap_usd"] = round(max(ath, a.get("peak_cap_usd") or 0, a.get("latest_cap_usd") or 0), 2)
             a["ath_at"] = iso(ts / 1000) if ts else ""
             aths += 1
+    for a in alerts:
+        mark_winner(a, now)
     json.dump(alerts, open(path, "w"), ensure_ascii=False, indent=0)
-    print("Prices: %d of %d tracked alerts re-priced; all-time high found for %d." % (len(best), len(mints), aths))
+    print("Prices: %d of %d tracked alerts re-priced; all-time high found for %d; %d saved as up %d%%+ since alert." % (
+        len(best), len(mints), aths, sum(1 for a in alerts if kept(a)), UP_SAVE_PCT))
 
 
 def load_labels(run):

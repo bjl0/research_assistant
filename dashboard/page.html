@@ -147,8 +147,34 @@
       <button class="ls-btn" type="button" data-view="near">Miss by one</button>
       <button class="ls-btn" type="button" data-view="checked">All holder-checked</button>
       <button class="ls-btn" type="button" data-view="all">Everything screened</button>
+      <button class="ls-btn" type="button" data-view="up5">Went up 5%+ since alert</button>
     </div>
-    <div class="ls-tablebox">
+    <p class="ls-note" id="up5-note" hidden></p>
+    <div class="ls-tablebox" id="up5-box" hidden>
+      <table class="ls-table" id="up5-table" data-source="alerts" data-row-key="mint">
+        <thead><tr>
+          <th class="ls-l" data-field="symbol">Token</th>
+          <th class="ls-l" data-field="name">Name</th>
+          <th class="ls-l">Links</th>
+          <th data-field="peak_gain_pct"><button class="ls-sort" type="button" data-up5-sort="peak_gain_pct">Peak gain since alert</button></th>
+          <th data-field="change_since_first_pct"><button class="ls-sort" type="button" data-up5-sort="change_since_first_pct">Now vs first alert</button></th>
+          <th data-field="first_alert_cap_usd"><button class="ls-sort" type="button" data-up5-sort="first_alert_cap_usd">First alert cap</button></th>
+          <th data-field="peak_cap_usd"><button class="ls-sort" type="button" data-up5-sort="peak_cap_usd">Peak cap</button></th>
+          <th data-field="latest_cap_usd"><button class="ls-sort" type="button" data-up5-sort="latest_cap_usd">Latest cap</button></th>
+          <th data-field="ath_cap_usd"><button class="ls-sort" type="button" data-up5-sort="ath_cap_usd">All-time high</button></th>
+          <th data-field="first_alert_at"><button class="ls-sort" type="button" data-up5-sort="first_alert_at">First alert</button></th>
+          <th data-field="liquidity_usd"><button class="ls-sort" type="button" data-up5-sort="liquidity_usd">Liquidity</button></th>
+          <th data-field="volume_24h_usd"><button class="ls-sort" type="button" data-up5-sort="volume_24h_usd">24h volume</button></th>
+          <th data-field="holders"><button class="ls-sort" type="button" data-up5-sort="holders">Holders</button></th>
+          <th data-field="top10_wallets_pct"><button class="ls-sort" type="button" data-up5-sort="top10_wallets_pct">Top-10 wallets</button></th>
+          <th class="ls-l" data-field="flags">Flags to read</th>
+          <th class="ls-l" data-field="top_traders">Top traders holding</th>
+          <th class="ls-l" data-field="now">Status</th>
+        </tr></thead>
+        <tbody id="up5-rows"></tbody>
+      </table>
+    </div>
+    <div class="ls-tablebox" id="token-box">
       <table class="ls-table" id="token-table" data-source="tokens" data-row-key="mint">
         <thead><tr>
           <th class="ls-l">Result</th>
@@ -254,7 +280,7 @@ const params = () => {
     p[k] = Number.isFinite(n) ? n : DEFAULTS[k];
   }
   p.no_danger = p.no_danger !== false;
-  if (!['matches', 'near', 'checked', 'all'].includes(p.view)) p.view = 'matches';
+  if (!['matches', 'near', 'checked', 'all', 'up5'].includes(p.view)) p.view = 'matches';
   if (!['all', 'new', 'meets', 'open'].includes(p.alert_view)) p.alert_view = 'all';
   return p;
 };
@@ -344,6 +370,13 @@ $('#reload').addEventListener('click', () => {
   reloading = true;
   dash.refresh('tokens');
   dash.refresh('alerts');
+  draw();
+});
+$('#up5-table').addEventListener('click', (event) => {
+  const b = event.target.closest('button[data-up5-sort]');
+  if (!b) return;
+  if (up5Key === b.dataset.up5Sort) up5Dir = -up5Dir;
+  else { up5Key = b.dataset.up5Sort; up5Dir = -1; }
   draw();
 });
 $('#token-table').addEventListener('click', (event) => {
@@ -624,6 +657,77 @@ const drawTable = (rows, p) => {
   }));
 };
 
+// Blake (12 Oct): every token that has gone 5% or more above its first-alert cap is saved for good; this view lists them all,
+// including ones the removal rules took off the main list. It reads the alert history, not the latest run.
+const isSaved = (a) => Boolean(a.went_up_5_at) || (typeof a.peak_gain_pct === 'number' && a.peak_gain_pct >= 5)
+  || (a.first_alert_cap_usd > 0 && a.peak_cap_usd >= a.first_alert_cap_usd * 1.05);
+let up5Key = 'peak_gain_pct', up5Dir = -1;
+const drawUp5 = (src, p) => {
+  const on = p.view === 'up5';
+  $('#token-box').hidden = on;
+  $('#up5-box').hidden = !on;
+  $('#up5-note').hidden = !on;
+  if (!on) return;
+  for (const b of document.querySelectorAll('[data-up5-sort]')) {
+    const th = b.closest('th');
+    if (b.dataset.up5Sort === up5Key) th.setAttribute('aria-sort', up5Dir > 0 ? 'ascending' : 'descending');
+    else th.removeAttribute('aria-sort');
+  }
+  const body = $('#up5-rows');
+  const note = (text) => {
+    const tr = document.createElement('tr');
+    const td = cell(text, 'ls-empty');
+    td.colSpan = 17;
+    tr.append(td);
+    body.replaceChildren(tr);
+  };
+  if (src.status !== 'ok') {
+    $('#up5-note').textContent = '';
+    note(src.status === 'error' ? 'Failed to load' : 'Loading…');
+    return;
+  }
+  const rows = src.data.filter(isSaved).sort((a, b) => {
+    const x = a[up5Key], y = b[up5Key];
+    if (x == null && y == null) return 0;
+    if (x == null) return 1;
+    if (y == null) return -1;
+    if (typeof x === 'string') return up5Dir * x.localeCompare(y);
+    return up5Dir * (x - y);
+  });
+  const gone = rows.filter((a) => a.removed_at).length;
+  $('#up5-note').textContent = `${int(rows.length)} ${rows.length === 1 ? 'token has' : 'tokens have'} gone 5% or more above ${rows.length === 1 ? 'its' : 'their'} market cap at the first alert. They are saved for good: ${int(gone)} of them have since been taken off the main list by your removal rules, and still show here. “Peak” is the highest cap the screener has recorded since the alert, including pump.fun's own record when it was set after the alert.`;
+  if (!rows.length) return note('No token has gone up 5% or more since its alert yet.');
+  body.replaceChildren(...rows.map((a) => {
+    const tr = document.createElement('tr');
+    tr.dataset.key = a.mint;
+    const sym = el('td', 'ls-l');
+    sym.append(tokenLink(a.mint, a.symbol, 'ls-link'), document.createTextNode(' '), ...pairNodes(a));
+    const lk = el('td', 'ls-l');
+    const lkBox = el('div', 'ls-links');
+    lkBox.append(...linksFor(a, true));
+    lk.append(lkBox);
+    const flagCell = el('td', 'ls-l ls-wrap');
+    flagCell.append(...flagNodes(a.flags));
+    if (a.identity_checks === NO_BIG_WALLET) {
+      if (flagCell.childNodes.length) flagCell.append(document.createTextNode('; '));
+      flagCell.append(el('span', 'ls-red', NO_BIG_WALLET));
+    }
+    const peak = typeof a.peak_gain_pct === 'number' ? a.peak_gain_pct : (a.first_alert_cap_usd > 0 ? 100 * (a.peak_cap_usd / a.first_alert_cap_usd - 1) : null);
+    const now = a.change_since_first_pct;
+    tr.append(
+      sym, cell(a.name, 'ls-l'), lk,
+      cell(dashIfNull(peak, (v) => signed(v) + '%'), 'ls-up'),
+      cell(dashIfNull(now, (v) => signed(v) + '%'), now == null ? undefined : now >= 0 ? 'ls-up' : 'ls-down'),
+      cell(dashIfNull(a.first_alert_cap_usd, usd)), cell(dashIfNull(a.peak_cap_usd, usd)), cell(dashIfNull(a.latest_cap_usd, usd)),
+      cell(dashIfNull(a.ath_cap_usd, usd)), cell(a.first_alert_at ? when(a.first_alert_at) : '—'),
+      cell(dashIfNull(a.liquidity_usd, usd)), cell(dashIfNull(a.volume_24h_usd, usd)), cell(dashIfNull(a.holders, int)),
+      cell(dashIfNull(a.top10_wallets_pct, pct)), flagCell,
+      cell(a.top_traders || '', 'ls-l ls-wrap' + (a.top_traders ? ' ls-trader-cell' : '')), cell(a.now || '', 'ls-l ls-wrap'),
+    );
+    return tr;
+  }));
+};
+
 const drawChart = (scored, p) => {
   const box = $('#map-chart');
   const pts = scored.filter(({t}) => t.holder_check === 'Checked' && t.liquidity_usd > 0);
@@ -730,6 +834,7 @@ function draw() {
   fill('screen_counts', counts);
   fill('alert_counts', acounts);
   drawAlerts(alerts, p);
+  drawUp5(alerts, p);
 
   const box = $('#map-chart');
   if (!ok) {
@@ -763,7 +868,7 @@ function draw() {
     : 'No new alerts in the last run. ';
   $('#takeaway').textContent = lead + `${int(matches.length)} of ${int(scored.length)} screened tokens meet every limit on screen now, and ${int(near.length)} miss by one.`;
   const view = {matches, near, checked: scored.filter((d) => d.t.holder_check === 'Checked'), all: scored}[p.view];
-  drawTable(view, p);
+  if (p.view !== 'up5') drawTable(view, p);
   drawChart(scored, p);
 }
 dash.onData(draw);
