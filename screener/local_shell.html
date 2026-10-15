@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solana launch screener (local)</title>
+<style>
+:root{
+  --color-bg:#ffffff;--color-fg:#1f1e1d;--color-fg-muted:#6b6a68;--color-panel:#f6f5f2;--color-border-line:#dcdad4;
+  --color-ok:#1f7a45;--color-bad:#b3261e;--color-warn:#9a6700;
+  --cds-gap-xs:.25rem;--cds-gap-sm:.5rem;--cds-gap-md:.875rem;--cds-gap-lg:1.5rem;
+  --cds-pad-xs:.25rem;--cds-pad-sm:.5rem;--cds-pad-md:.75rem;--cds-pad-lg:1.125rem;--cds-radius:8px;
+  --cds-font-size-caption:.8125rem;--cds-font-size-body:.9375rem;--cds-font-size-heading:1.125rem;--cds-font-size-title:1.75rem;
+  --cds-font-weight-medium:600;--cds-dur-slow:.3s;
+  --cds-chart-reference:#8a8984;--cds-chart-muted:#b9b7b0;--cds-chart-grid:#e7e5df;--cds-chart-axis:#8a8984;
+  --cds-text-secondary:#6b6a68;--cds-surface-popover:#ffffff;--cds-border:#dcdad4;--cds-shadow-popover:0 4px 16px rgba(0,0,0,.14);
+  --font-anthropic-sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--font-anthropic-serif:Georgia,"Times New Roman",serif;
+}
+@media (prefers-color-scheme: dark){:root{
+  --color-bg:#1f1e1d;--color-fg:#f0eee9;--color-fg-muted:#a3a19b;--color-panel:#2a2927;--color-border-line:#43413d;
+  --color-ok:#5cc489;--color-bad:#f08c84;--color-warn:#e0b04a;
+  --cds-chart-reference:#a3a19b;--cds-chart-muted:#5b5954;--cds-chart-grid:#363431;--cds-chart-axis:#a3a19b;
+  --cds-text-secondary:#a3a19b;--cds-surface-popover:#2a2927;--cds-border:#43413d;--cds-shadow-popover:0 4px 16px rgba(0,0,0,.5);}}
+html{background:var(--color-bg)}
+body{margin:0 auto;max-width:1280px;padding:24px 16px 48px;background:var(--color-bg);color:var(--color-fg);font-family:var(--font-anthropic-sans)}
+.dash-skeleton{opacity:.55}
+.ls-local-bar{margin:0 0 12px;font-size:.8125rem;color:var(--color-fg-muted)}
+</style>
+</head>
+<body>
+<p class="ls-local-bar" id="local-bar">Local copy. Data from your own computer's last run.</p>
+<!--PAGE-HTML-->
+<script>/*D3*/</script>
+<script>
+// A small stand-in for the claude.ai Dashboard runtime (the `dash` object and the per-viewer store), so the same page
+// runs from a file in a browser. Data comes from current/data.js, written by local.py after every run.
+(function () {
+  const KEY = 'screener-local:';
+  const lsGet = (k) => { try { return JSON.parse(localStorage.getItem(KEY + k)); } catch (e) { return null; } };
+  const lsSet = (k, v) => { try { localStorage.setItem(KEY + k, JSON.stringify(v)); } catch (e) { /* private window */ } };
+  const state = {tokens: {status: 'loading', data: []}, alerts: {status: 'loading', data: []}};
+  const calcs = {}, listeners = [];
+  let saved = {}, defaults = {};
+  const make = (id) => state[id] || {status: 'ok', data: []};
+  const recalc = () => {
+    for (const [id, c] of Object.entries(calcs)) {
+      const ins = c.inputs.map((i) => (state[i] && state[i].status === 'ok' ? state[i].data : []));
+      try { state[id] = {status: 'ok', data: c.fn(...ins)}; } catch (e) { state[id] = {status: 'error', data: []}; }
+    }
+  };
+  const emit = () => { recalc(); for (const f of listeners) f(); };
+  const apply = (d) => {
+    defaults = d.params || {};
+    state.tokens = {status: 'ok', data: d.tokens || []};
+    state.alerts = {status: 'ok', data: d.alerts || []};
+    const bar = document.getElementById('local-bar');
+    if (bar && d.written_at) bar.textContent = 'Local copy. Last run saved ' + new Date(d.written_at).toLocaleString() + '.';
+    emit();
+  };
+  const load = (after) => {
+    const s = document.createElement('script');
+    s.src = 'current/data.js?t=' + Date.now();
+    s.onload = () => { s.remove(); if (window.__SCREENER_DATA) apply(window.__SCREENER_DATA); if (after) after(); };
+    s.onerror = () => {
+      s.remove();
+      if (state.tokens.status === 'loading') { state.tokens = {status: 'error', data: []}; state.alerts = {status: 'error', data: []}; }
+      emit(); if (after) after();
+    };
+    document.head.appendChild(s);
+  };
+  saved = lsGet('params') || {};
+  window.dash = {
+    calc(id, c) { calcs[id] = c; },
+    data: (id) => make(id),
+    onData(fn) { listeners.push(fn); fn(); load(); },
+    params: () => ({...defaults, ...saved}),
+    setParams(o) { saved = {...saved, ...o}; lsSet('params', saved); emit(); },
+    resetParams() { saved = {}; lsSet('params', saved); emit(); },
+    refresh(id) {
+      if (!state[id]) return;
+      state[id] = {...state[id], refreshing: true};
+      if (id === 'alerts') load(() => { for (const k of ['tokens', 'alerts']) state[k] = {...state[k], refreshing: false}; emit(); });
+    },
+    colors: ['#3d6fb4', '#c4622d', '#4a8f5d'],
+  };
+  // "Acted on" marks, kept in this browser
+  window.claude = {
+    db: {doc: (path) => ({
+      get: async () => { const v = lsGet('doc:' + path); return {exists: v != null, data: () => v}; },
+      set: async (o) => { lsSet('doc:' + path, o); },
+    })},
+    user: {id: async () => 'local'},
+  };
+  document.addEventListener('DOMContentLoaded', () => {
+    const asof = (document.getElementById('as-of') || {}).parentElement;
+    if (asof) asof.innerHTML = asof.innerHTML.replace(/A scheduled run refreshes this page about once an hour, so prices here can be up to an hour old/,
+      'This page shows the last time you ran <code>local.py run</code> on your computer, so prices are as old as that run');
+  });
+})();
+</script>
+<script>/*PAGE-JS*/</script>
+</body>
+</html>
