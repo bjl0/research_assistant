@@ -19,11 +19,25 @@ FOLDER holds
   log/new_alerts.txt    every new alert ever raised, with the time
 Nothing is ever deleted by the program.
 """
-import sys, os, re, json, csv, time, shutil, datetime as dt, urllib.request, urllib.error
+import sys, os, re, json, csv, time, shutil, ssl, datetime as dt, urllib.request, urllib.error
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import screen as S  # noqa: E402
+
+# python.org's Python on a Mac ships without its security certificates until "Install Certificates.command" is run, which
+# makes every download fail with CERTIFICATE_VERIFY_FAILED. Use the certifi bundle when it is installed. Certificate
+# checking is never switched off.
+try:
+    import certifi
+    _CTX = ssl.create_default_context(cafile=certifi.where())
+    ssl._create_default_https_context = lambda *a, **k: _CTX
+except Exception:
+    pass
+
+SSL_HELP = ("Your Python cannot verify website certificates (a common first-time problem with Python from python.org on a Mac). "
+            "Fix, once: in Finder open Applications > Python 3.x and double-click \"Install Certificates.command\", "
+            "or run:  python3 -m pip install certifi   then run this again.")
 
 UA = {"User-Agent": "Mozilla/5.0 (launch screener, local run)", "Accept": "application/json"}
 PROFILES = ["https://api.dexscreener.com/token-profiles/latest/v1", "https://api.dexscreener.com/token-boosts/latest/v1",
@@ -46,6 +60,8 @@ def get_json(url, tries=3):
         except Exception as e:
             last = str(getattr(e, "reason", e))
         time.sleep(1.5 * (i + 1))
+    if last and "CERTIFICATE_VERIFY_FAILED" in last:
+        raise SystemExit(SSL_HELP)
     raise RuntimeError("%s: %s" % (url.split("?")[0], last))
 
 
@@ -266,7 +282,8 @@ def write_page(folder):
 def main():
     if len(sys.argv) < 2 or sys.argv[1] not in ("run", "page"):
         raise SystemExit(__doc__)
-    folder = sys.argv[2] if len(sys.argv) > 2 else "screener_data"
+    # default: a screener_data folder next to the screener folder, wherever the command is typed
+    folder = sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, "..", "screener_data")
     if sys.argv[1] == "page":
         write_data_js(folder) if os.path.exists(os.path.join(folder, "current", "alerts.json")) else None
         write_page(folder)

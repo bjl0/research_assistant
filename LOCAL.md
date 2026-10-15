@@ -10,6 +10,10 @@ You need Python 3 (free, from python.org; on Windows tick "Add Python to PATH" w
 
        python3 screener/local.py run          (on Windows: py screener\local.py run)
 
+   Type it from the main folder (the one that contains `screener`, `dashboard` and `data`). If you are inside the `screener` folder it also works as `python3 local.py run`; the results always go to `screener_data` in the main folder.
+
+   If it says it cannot verify certificates (common with Python from python.org on a Mac), open Applications > Python 3.x in Finder, double-click **Install Certificates.command**, and run it again.
+
 4. Open `screener_data/dashboard.html` in your browser (double-click it). After each later run, press **Reload prices** on the page, or refresh the browser tab.
 
 Run it as often as you like. To make it automatic, schedule that same command every hour or two: Task Scheduler on Windows, `crontab -e` on Mac/Linux (for example `24 * * * * cd /path/to/research_assistant && python3 screener/local.py run`). The computer has to be on and online at that time.
