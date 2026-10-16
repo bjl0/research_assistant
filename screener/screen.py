@@ -95,8 +95,8 @@ def get_as_of(run, create=False):
     if not os.path.exists(p):
         if not create:
             raise SystemExit("as_of.txt is missing: run urls-market first")
-        open(p, "w").write(iso(dt.datetime.now(dt.timezone.utc).timestamp()))
-    return epoch(open(p).read())
+        open(p, "w", encoding="utf-8").write(iso(dt.datetime.now(dt.timezone.utc).timestamp()))
+    return epoch(open(p, encoding="utf-8").read())
 
 
 def get_params(run):
@@ -513,7 +513,7 @@ def add_images(run, as_of):
         a["image"], a["image_checked_at"] = (val if status == "ok" else ""), iso(as_of)
         got += status == "ok"
         none += status == "none"
-    json.dump(alerts, open(path, "w"), ensure_ascii=False, indent=0)
+    json.dump(alerts, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=0)
     have = sum(1 for a in alerts if a.get("image"))
     print("Images: %d downloaded, %d tokens have none, %d alerts now show a thumbnail out of %d." % (got, none, have, len(alerts)))
     if errors:
@@ -609,7 +609,7 @@ def reprice(run, as_of):
     for a in alerts:
         mark_winner(a, now)
         derive_extremes(a)
-    json.dump(alerts, open(path, "w"), ensure_ascii=False, indent=0)
+    json.dump(alerts, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=0)
     print("Prices: %d of %d tracked alerts re-priced; all-time high found for %d; highs and lows from candles for %d; %d saved as up %d%%+ since alert." % (
         len(best), len(mints), aths, candled, sum(1 for a in alerts if kept(a)), UP_SAVE_PCT))
 
@@ -657,7 +657,7 @@ def mark_traders(run, as_of):
         for r in rows:
             if r["mint"] in found:   # a failed lookup keeps what the row had
                 r["top_traders"], r["top_traders_checked_at"] = found[r["mint"]], now
-        json.dump(rows, open(files[k], "w"), ensure_ascii=False, indent=0)
+        json.dump(rows, open(files[k], "w", encoding="utf-8"), ensure_ascii=False, indent=0)
     print("Traders: %d labelled top traders; %d of %d coins checked, %d held by at least one%s." % (
         len(traders), len(found), len(mints), sum(1 for v in found.values() if v),
         (", %d lookups failed" % failed) if failed else ""))
@@ -730,10 +730,10 @@ def main():
     os.makedirs(out, exist_ok=True)
     gone = {a["mint"] for a in alerts if removed(a)}
     shown = [r for r in rows if r["mint"] not in gone and not (r["market_cap_usd"] is not None and r["market_cap_usd"] < MIN_CAP_USD)]
-    json.dump(shown, open(os.path.join(out, "tokens.json"), "w"), ensure_ascii=False, indent=0)
-    json.dump(alerts, open(os.path.join(out, "alerts.json"), "w"), ensure_ascii=False, indent=0)
+    json.dump(shown, open(os.path.join(out, "tokens.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=0)
+    json.dump(alerts, open(os.path.join(out, "alerts.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=0)
     keep = sorted(profiles.values(), key=lambda x: x.get("checked_at") or "", reverse=True)[:1500]
-    json.dump({"list": keep}, open(os.path.join(out, "profiles_doc.json"), "w"), ensure_ascii=False)
+    json.dump({"list": keep}, open(os.path.join(out, "profiles_doc.json"), "w", encoding="utf-8"), ensure_ascii=False)
     meets = [r for r in rows if not fails(r, p)]
     lines = ["Run at %s: %d tokens screened, %d holder-checked, %d meet the strategy, %d new." % (
         iso(as_of), len(rows), sum(1 for r in rows if r["holder_check"] == "Checked"), len(meets), len(new))]
@@ -747,7 +747,7 @@ def main():
     if dropped:
         lines.append("Filtered out %d coin(s) where %d or more top wallets hold the same amount: %s" % (
             len(dropped), SAME_AMOUNT_DROP, ", ".join("%s (%d wallets)" % (d["symbol"], d["wallets"]) for d in dropped)))
-    open(os.path.join(out, "summary.txt"), "w").write("\n".join(lines) + "\n")
+    open(os.path.join(out, "summary.txt"), "w", encoding="utf-8").write("\n".join(lines) + "\n")
     print("\n".join(lines))
     if want:
         print("\nProfile lookups still to do (%d, doing the first %d). Fetch each URL, save the answer as in/profile_N.json, then run build again:" % (

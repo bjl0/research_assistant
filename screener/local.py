@@ -110,7 +110,7 @@ def fetch_inputs(run, as_of, p, prev_alerts, raw):
             data = get_json(url)
             lists[name] = data
             lines = [x["tokenAddress"] for x in (data if isinstance(data, list) else [data]) if x.get("chainId") == "solana"]
-            open(os.path.join(inp, "candidates_%s.txt" % name), "w").write("\n".join(lines) + "\n")
+            open(os.path.join(inp, "candidates_%s.txt" % name), "w", encoding="utf-8").write("\n".join(lines) + "\n")
         except Exception as e:
             problems.append("candidate list %s failed (%s)" % (name, e))
         time.sleep(PAUSE)
@@ -169,7 +169,7 @@ def run_cmd(folder):
     seed = os.path.join(HERE, "..", "data", "alerts.json")
     if not os.path.exists(os.path.join(cur, "alerts.json")) and os.path.exists(seed):
         shutil.copy(seed, os.path.join(cur, "alerts.json"))   # first run: carry on from the alert history saved in this repository
-        print("First run: starting from the saved alert history in data/alerts.json (%d alerts)." % len(json.load(open(seed))))
+        print("First run: starting from the saved alert history in data/alerts.json (%d alerts)." % len(json.load(open(seed, encoding="utf-8"))))
     # a scratch run folder in the format screen.py expects, rebuilt every time from the saved state
     run = os.path.join(folder, "work")
     shutil.rmtree(run, ignore_errors=True)
@@ -178,7 +178,7 @@ def run_cmd(folder):
     for f, dest in (("alerts.json", "prev_alerts.json"), ("profiles_doc.json", "prev_profiles.json")):
         if os.path.exists(os.path.join(cur, f)):
             shutil.copy(os.path.join(cur, f), os.path.join(run, dest))
-    open(os.path.join(run, "as_of.txt"), "w").write(S.iso(now.timestamp()))
+    open(os.path.join(run, "as_of.txt"), "w", encoding="utf-8").write(S.iso(now.timestamp()))
     as_of = now.timestamp()
     p = S.get_params(run)
     prev_alerts = S.read_json(os.path.join(run, "prev_alerts.json"), [])
@@ -203,8 +203,8 @@ def run_cmd(folder):
     out = os.path.join(run, "out")
     for f in ("tokens.json", "alerts.json", "profiles_doc.json"):
         shutil.copy(os.path.join(out, f), os.path.join(cur, f))
-    tokens, alerts = json.load(open(os.path.join(cur, "tokens.json"))), json.load(open(os.path.join(cur, "alerts.json")))
-    summary = open(os.path.join(out, "summary.txt")).read()
+    tokens, alerts = json.load(open(os.path.join(cur, "tokens.json"), encoding="utf-8")), json.load(open(os.path.join(cur, "alerts.json"), encoding="utf-8"))
+    summary = open(os.path.join(out, "summary.txt"), encoding="utf-8").read()
     # history: what the data looked like after this run (thumbnails left out, they are big and never change)
     h = os.path.join(folder, "history", stamp)
     save(os.path.join(h, "tokens.json"), tokens)
@@ -262,7 +262,7 @@ def write_logs(folder, stamp, tokens, alerts, summary, now, counts, problems):
 
 def write_data_js(folder):
     cur = os.path.join(folder, "current")
-    d = {k: json.load(open(os.path.join(cur, k + ".json"))) for k in ("tokens", "alerts")}
+    d = {k: json.load(open(os.path.join(cur, k + ".json"), encoding="utf-8")) for k in ("tokens", "alerts")}
     d["params"] = S.read_json(os.path.join(folder, "params.json"), {})
     d["written_at"] = S.iso(time.time())
     tmp = os.path.join(cur, "data.js.tmp")
@@ -280,6 +280,9 @@ def write_page(folder):
 
 
 def main():
+    for stream in (sys.stdout, sys.stderr):   # Windows consoles default to a narrow encoding that chokes on token names
+        try: stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception: pass
     if len(sys.argv) < 2 or sys.argv[1] not in ("run", "page"):
         raise SystemExit(__doc__)
     # default: a screener_data folder next to the screener folder, wherever the command is typed
