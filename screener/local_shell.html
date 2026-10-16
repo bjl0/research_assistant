@@ -25,10 +25,18 @@ html{background:var(--color-bg)}
 body{margin:0 auto;max-width:1280px;padding:24px 16px 48px;background:var(--color-bg);color:var(--color-fg);font-family:var(--font-anthropic-sans)}
 .dash-skeleton{opacity:.55}
 .ls-local-bar{margin:0 0 12px;font-size:.8125rem;color:var(--color-fg-muted)}
+.sv-bar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 12px;padding:.5rem .75rem;border:1px solid var(--color-border-line);border-radius:8px;background:var(--color-panel);font-size:.8125rem}
+.sv-bar button{font:inherit;color:var(--color-fg);background:var(--color-bg);border:1px solid var(--color-border-line);border-radius:8px;padding:.25rem .75rem;cursor:pointer}
+.sv-bar button:disabled{opacity:.5;cursor:default}
+.sv-note{color:var(--color-fg-muted)}
 </style>
 </head>
 <body>
 <p class="ls-local-bar" id="local-bar">Local copy. Data from your own computer's last run.</p>
+<div class="sv-bar" id="sv-bar" hidden>
+  <button type="button" id="sv-run">Run scan now</button>
+  <span class="sv-note" id="sv-status" aria-live="polite"></span>
+</div>
 <!--PAGE-HTML-->
 <script>/*D3*/</script>
 <script>
@@ -91,7 +99,66 @@ body{margin:0 auto;max-width:1280px;padding:24px 16px 48px;background:var(--colo
     })},
     user: {id: async () => 'local'},
   };
+  // Only when opened through `local.py serve` (http://127.0.0.1): a Run button, and saving the limits for scans.
+  const LIMITS = ['max_age_days', 'min_liq', 'min_vol', 'min_holders', 'max_top10', 'max_wallet', 'min_locked', 'no_danger'];
+  const api = async (path, body) => {
+    const r = await fetch(path, body === undefined ? {cache: 'no-store'} : {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'The server said no.');
+    return j;
+  };
+  const setupServer = async () => {
+    if (location.protocol !== 'http:') return;
+    let status;
+    try { status = await api('/api/status'); } catch (e) { return; }
+    const bar = document.getElementById('sv-bar'), btn = document.getElementById('sv-run'), note = document.getElementById('sv-status');
+    bar.hidden = false;
+    const show = (s) => {
+      btn.disabled = s.running;
+      btn.textContent = s.running ? 'Scan running…' : 'Run scan now';
+      if (s.running) note.textContent = 'Scanning (about a minute). ' + ((s.tail || []).slice(-1)[0] || '');
+      else if (s.ok === true) note.textContent = 'Scan finished ' + new Date(s.finished_at).toLocaleTimeString() + '.';
+      else if (s.ok === false) note.textContent = 'The scan failed: ' + ((s.tail || []).slice(-3).join(' ') || 'no details');
+      else note.textContent = 'Reads new launches and prices, then updates this page.';
+    };
+    let wasRunning = status.running;
+    show(status);
+    const poll = async () => {
+      try {
+        const s = await api('/api/status');
+        show(s);
+        if (wasRunning && !s.running && s.ok) window.dash.refresh('alerts');
+        wasRunning = s.running;
+      } catch (e) { note.textContent = 'Lost contact with the screener window. Is it still open?'; }
+    };
+    setInterval(poll, 2000);
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try { await api('/api/run', {}); wasRunning = true; } catch (e) { note.textContent = e.message; }
+      poll();
+    });
+    // next to "Reset to saved values": save the limits now on screen so every future scan uses them
+    const reset = document.getElementById('f-reset');
+    if (reset) {
+      const save = document.createElement('button');
+      save.type = 'button'; save.className = reset.className; save.textContent = 'Save these limits for scans';
+      const msg = document.createElement('span'); msg.className = 'sv-note'; msg.setAttribute('aria-live', 'polite');
+      reset.after(save); save.after(msg);
+      save.addEventListener('click', async () => {
+        const cur = window.dash.params(), body = {};
+        for (const k of LIMITS) if (cur[k] !== undefined) body[k] = cur[k];
+        try {
+          const saved2 = await api('/api/params', body);
+          defaults = {...defaults, ...saved2};
+          for (const k of LIMITS) delete saved[k];
+          lsSet('params', saved); emit();
+          msg.textContent = ' Saved. The next scan uses these limits.';
+        } catch (e) { msg.textContent = ' Not saved: ' + e.message; }
+      });
+    }
+  };
   document.addEventListener('DOMContentLoaded', () => {
+    setupServer();
     const asof = (document.getElementById('as-of') || {}).parentElement;
     if (asof) asof.innerHTML = asof.innerHTML.replace(/A scheduled run refreshes this page about once an hour, so prices here can be up to an hour old/,
       'This page shows the last time you ran <code>local.py run</code> on your computer, so prices are as old as that run');

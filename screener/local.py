@@ -3,6 +3,8 @@
 
   python3 local.py run   [FOLDER]   fetch, screen, update and save everything (default folder: ./screener_data)
   python3 local.py page  [FOLDER]   rewrite FOLDER/dashboard.html (done automatically by run)
+  python3 local.py serve [FOLDER]   open the dashboard in your browser with a "Run scan now" button and a way to save
+                                    your limits; leave the window open while you use it (Ctrl+C to stop)
 
 Needs only Python 3.8+ and internet. It uses screen.py (same folder) for all the screening rules, so the results are
 the same as the hourly Claude task, and the same strategy limits apply (FOLDER/params.json, copied from
@@ -279,11 +281,148 @@ def write_page(folder):
     open(os.path.join(folder, "dashboard.html"), "w", encoding="utf-8").write(html)
 
 
+# ---------------------------------------------------------------- serve: dashboard with a Run button and saved limits
+LIMIT_KEYS = {"max_age_days": (0, 365), "min_liq": (0, 1e12), "min_vol": (0, 1e12), "min_holders": (0, 1e9),
+              "max_top10": (0, 100), "max_wallet": (0, 100), "min_locked": (0, 100)}
+
+
+def clean_limits(o):
+    """Check limits sent by the page. Returns (dict, error)."""
+    out = {}
+    if not isinstance(o, dict):
+        return None, "Expected a set of limits."
+    for k, (lo, hi) in LIMIT_KEYS.items():
+        if k not in o:
+            continue
+        v = o[k]
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or not lo <= v <= hi:
+            return None, "%s must be a number between %g and %g." % (k, lo, hi)
+        out[k] = int(v) if float(v).is_integer() else v
+    if "no_danger" in o:
+        if not isinstance(o["no_danger"], bool):
+            return None, "no_danger must be on or off."
+        out["no_danger"] = o["no_danger"]
+    return out, None
+
+
+def serve_cmd(folder, port=8765):
+    import threading, subprocess, webbrowser
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    folder = os.path.abspath(folder)
+    os.makedirs(os.path.join(folder, "current"), exist_ok=True)
+    pj = os.path.join(folder, "params.json")
+    if not os.path.exists(pj):
+        shutil.copy(os.path.join(HERE, "..", "dashboard", "params.json"), pj)
+    if os.path.exists(os.path.join(folder, "current", "alerts.json")):
+        write_data_js(folder)
+    write_page(folder)
+    lock = threading.Lock()
+    st = {"running": False, "started_at": None, "finished_at": None, "ok": None, "tail": []}
+
+    def do_run():
+        env = dict(os.environ, PYTHONIOENCODING="utf-8")
+        try:
+            proc = subprocess.Popen([sys.executable, os.path.abspath(__file__), "run", folder], stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, env=env, encoding="utf-8", errors="replace")
+            for line in proc.stdout:
+                with lock:
+                    st["tail"] = (st["tail"] + [line.rstrip()])[-12:]
+            ok = proc.wait() == 0
+        except Exception as e:
+            ok = False
+            with lock:
+                st["tail"].append("Could not start the scan: %s" % e)
+        with lock:
+            st.update(running=False, ok=ok, finished_at=S.iso(time.time()))
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def _send(self, code, body, ctype="application/json; charset=utf-8"):
+            b = body if isinstance(body, bytes) else body.encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(b)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(b)
+
+        def _json(self, code, o):
+            self._send(code, json.dumps(o))
+
+        def _host_ok(self):   # only this computer's own page may talk to the server (blocks other websites from clicking Run)
+            return self.headers.get("Host", "") in ("127.0.0.1:%d" % port, "localhost:%d" % port)
+
+        def do_GET(self):
+            if not self._host_ok():
+                return self._json(403, {"error": "Wrong host."})
+            path = self.path.split("?")[0]
+            if path in ("/", "/dashboard.html"):
+                return self._send(200, open(os.path.join(folder, "dashboard.html"), "rb").read(), "text/html; charset=utf-8")
+            if path == "/current/data.js":
+                f = os.path.join(folder, "current", "data.js")
+                if not os.path.exists(f):
+                    return self._send(404, "", "text/plain")
+                return self._send(200, open(f, "rb").read(), "text/javascript; charset=utf-8")
+            if path == "/api/status":
+                with lock:
+                    return self._json(200, dict(st))
+            if path == "/api/params":
+                return self._json(200, S.read_json(pj, {}))
+            self._send(404, "Not found", "text/plain")
+
+        def do_POST(self):
+            if not self._host_ok() or self.headers.get("Origin") not in (None, "http://127.0.0.1:%d" % port, "http://localhost:%d" % port):
+                return self._json(403, {"error": "Not allowed."})
+            path = self.path.split("?")[0]
+            n = int(self.headers.get("Content-Length") or 0)
+            if n > 10000:
+                return self._json(413, {"error": "Too large."})
+            raw = self.rfile.read(n)
+            if path == "/api/run":
+                with lock:
+                    if st["running"]:
+                        return self._json(409, {"error": "A scan is already running."})
+                    st.update(running=True, started_at=S.iso(time.time()), finished_at=None, ok=None, tail=[])
+                threading.Thread(target=do_run, daemon=True).start()
+                return self._json(200, {"started": True})
+            if path == "/api/params":
+                try:
+                    new, err = clean_limits(json.loads(raw.decode("utf-8")))
+                except ValueError:
+                    new, err = None, "Could not read the limits."
+                if err:
+                    return self._json(400, {"error": err})
+                cur = S.read_json(pj, {})
+                cur.update(new)
+                tmp = pj + ".tmp"
+                open(tmp, "w", encoding="utf-8").write(json.dumps(cur, indent=1, sort_keys=True) + "\n")
+                os.replace(tmp, pj)
+                if os.path.exists(os.path.join(folder, "current", "alerts.json")):
+                    write_data_js(folder)
+                return self._json(200, cur)
+            self._json(404, {"error": "Not found"})
+
+    try:
+        srv = ThreadingHTTPServer(("127.0.0.1", port), H)
+    except OSError:
+        raise SystemExit("Port %d is already in use. Is the screener already open in another window? Close it, or visit http://127.0.0.1:%d" % (port, port))
+    url = "http://127.0.0.1:%d/" % port
+    print("Screener dashboard is running at", url)
+    print("Leave this window open while you use the page. Press Ctrl+C here to stop.")
+    threading.Timer(0.8, lambda: webbrowser.open(url)).start()
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print("Stopped.")
+
+
 def main():
     for stream in (sys.stdout, sys.stderr):   # Windows consoles default to a narrow encoding that chokes on token names
         try: stream.reconfigure(encoding="utf-8", errors="replace")
         except Exception: pass
-    if len(sys.argv) < 2 or sys.argv[1] not in ("run", "page"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("run", "page", "serve"):
         raise SystemExit(__doc__)
     # default: a screener_data folder next to the screener folder, wherever the command is typed
     folder = sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, "..", "screener_data")
@@ -291,6 +430,8 @@ def main():
         write_data_js(folder) if os.path.exists(os.path.join(folder, "current", "alerts.json")) else None
         write_page(folder)
         print("Wrote", os.path.join(folder, "dashboard.html"))
+    elif sys.argv[1] == "serve":
+        serve_cmd(folder)
     else:
         run_cmd(folder)
 
