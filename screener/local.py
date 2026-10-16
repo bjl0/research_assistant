@@ -264,7 +264,7 @@ def write_logs(folder, stamp, tokens, alerts, summary, now, counts, problems):
 
 def write_data_js(folder):
     cur = os.path.join(folder, "current")
-    d = {k: json.load(open(os.path.join(cur, k + ".json"), encoding="utf-8")) for k in ("tokens", "alerts")}
+    d = {k: S.read_json(os.path.join(cur, k + ".json"), []) for k in ("tokens", "alerts")}   # a missing file (no finished run yet) shows as empty
     d["params"] = S.read_json(os.path.join(folder, "params.json"), {})
     d["written_at"] = S.iso(time.time())
     tmp = os.path.join(cur, "data.js.tmp")
@@ -313,8 +313,7 @@ def serve_cmd(folder, port=8765):
     pj = os.path.join(folder, "params.json")
     if not os.path.exists(pj):
         shutil.copy(os.path.join(HERE, "..", "dashboard", "params.json"), pj)
-    if os.path.exists(os.path.join(folder, "current", "alerts.json")):
-        write_data_js(folder)
+    write_data_js(folder)
     write_page(folder)
     lock = threading.Lock()
     st = {"running": False, "started_at": None, "finished_at": None, "ok": None, "tail": []}
@@ -399,8 +398,7 @@ def serve_cmd(folder, port=8765):
                 tmp = pj + ".tmp"
                 open(tmp, "w", encoding="utf-8").write(json.dumps(cur, indent=1, sort_keys=True) + "\n")
                 os.replace(tmp, pj)
-                if os.path.exists(os.path.join(folder, "current", "alerts.json")):
-                    write_data_js(folder)
+                write_data_js(folder)
                 return self._json(200, cur)
             self._json(404, {"error": "Not found"})
 
