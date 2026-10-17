@@ -29,6 +29,8 @@ body{margin:0 auto;max-width:1280px;padding:24px 16px 48px;background:var(--colo
 .sv-bar button{font:inherit;color:var(--color-fg);background:var(--color-bg);border:1px solid var(--color-border-line);border-radius:8px;padding:.25rem .75rem;cursor:pointer}
 .sv-bar button:disabled{opacity:.5;cursor:default}
 .sv-note{color:var(--color-fg-muted)}
+.sv-auto{display:inline-flex;align-items:center;gap:.35rem}
+.sv-auto input[type=number]{width:4.5rem;font:inherit;color:var(--color-fg);background:var(--color-bg);border:1px solid var(--color-border-line);border-radius:6px;padding:.15rem .4rem}
 </style>
 </head>
 <body>
@@ -36,6 +38,8 @@ body{margin:0 auto;max-width:1280px;padding:24px 16px 48px;background:var(--colo
 <div class="sv-bar" id="sv-bar" hidden>
   <button type="button" id="sv-run">Run scan now</button>
   <span class="sv-note" id="sv-status" aria-live="polite"></span>
+  <label class="sv-auto"><input type="checkbox" id="sv-auto"> Auto scan every <input type="number" id="sv-mins" min="5" max="1440" step="1" value="60"> minutes</label>
+  <span class="sv-note" id="sv-next" aria-live="off"></span>
 </div>
 <!--PAGE-HTML-->
 <script>/*D3*/</script>
@@ -148,6 +152,31 @@ body{margin:0 auto;max-width:1280px;padding:24px 16px 48px;background:var(--colo
       } catch (e) { note.textContent = 'Lost contact with the screener window. Is it still open?'; }
     };
     setInterval(poll, 2000);
+    // Auto scan: while this page is open, start a scan every N minutes (not less than 5, so the data sites are not hammered).
+    // The choice is remembered in this browser. A scan already running is never doubled up; that tick is skipped.
+    const autoBox = document.getElementById('sv-auto'), minsBox = document.getElementById('sv-mins'), nextNote = document.getElementById('sv-next');
+    const MIN_MINS = 5;
+    const cfg = lsGet('auto') || {};
+    autoBox.checked = !!cfg.on;
+    minsBox.value = Number.isFinite(cfg.mins) && cfg.mins >= MIN_MINS ? cfg.mins : 60;
+    let nextAt = autoBox.checked ? Date.now() + minsBox.value * 60000 : 0;
+    const mins = () => Math.min(1440, Math.max(MIN_MINS, Math.round(Number(minsBox.value)) || 60));
+    const saveAuto = () => lsSet('auto', {on: autoBox.checked, mins: mins()});
+    autoBox.addEventListener('change', () => { nextAt = autoBox.checked ? Date.now() + mins() * 60000 : 0; saveAuto(); });
+    minsBox.addEventListener('change', () => { minsBox.value = mins(); if (autoBox.checked) nextAt = Date.now() + mins() * 60000; saveAuto(); });
+    setInterval(async () => {
+      if (!autoBox.checked) { nextNote.textContent = ''; return; }
+      const left = nextAt - Date.now();
+      if (left > 0) {
+        const m = Math.floor(left / 60000), sec = Math.floor(left / 1000) % 60;
+        nextNote.textContent = 'Next scan in ' + m + ':' + String(sec).padStart(2, '0') + ' (keep this page and the screener window open)';
+        return;
+      }
+      nextAt = Date.now() + mins() * 60000;
+      if (btn.disabled) return;   // a scan is already running
+      try { await api('/api/run', {}); wasRunning = true; } catch (e) { note.textContent = 'Auto scan could not start: ' + e.message; }
+      poll();
+    }, 1000);
     btn.addEventListener('click', async () => {
       btn.disabled = true;
       try { await api('/api/run', {}); wasRunning = true; } catch (e) { note.textContent = e.message; }

@@ -51,3 +51,8 @@ The first run carries on from the alert history saved in `data/alerts.json`, so 
 - "Acted on" marks and any limits you change on the page are saved in your browser only.
 - The green top-trader marks are not available locally yet (they need the wallet label database that lives in Claude).
 - The claude.ai dashboard is not updated by local runs. The scheduled Claude tasks are separate and do not run when they are switched off.
+
+
+## Automatic scans while the dashboard is open
+
+At the top of the served dashboard, tick **Auto scan every N minutes** and type the number of minutes you want (5 or more). The page counts down and starts a scan by itself, then refreshes. Your choice is remembered. It only works while the dashboard page and the screener window (where you ran `serve`) both stay open and the computer is awake.
