@@ -20,6 +20,14 @@ You need Python 3 (free, from python.org; on Windows tick "Add Python to PATH" w
 
    It opens `http://localhost:8765/dashboard.html`. Leave that terminal window open; **Reload prices** now fetches fresh market caps for your alerts from DEX Screener (a few seconds). Press Ctrl+C in the terminal to stop it. If you just double-click `screener_data/dashboard.html`, the button can only re-read the last run's saved data.
 
+## Easier: a dashboard with a "Run scan now" button
+
+Instead of steps 3 and 4, on Windows just double-click **`start_screener.bat`** in the main folder (or type `py screener\local.py serve`). A black window opens and stays open, and your browser opens the dashboard. Keep the black window open while you use the page; close it to stop.
+
+- **Run scan now** (top of the page) does the same as `local.py run`, takes about a minute, and updates the page when it finishes.
+- **Your limits:** change the numbers in the filter area, then press **Save these limits for scans**. They are written to `screener_data/params.json`, so every later scan (button, terminal or scheduled) uses them. Without pressing Save, the numbers only change what you see on screen.
+- The page only works while that window is open. If you open `dashboard.html` as a plain file instead, the Run and Save buttons do not appear.
+
 Run it as often as you like. To make it automatic, schedule that same command every hour or two: Task Scheduler on Windows, `crontab -e` on Mac/Linux (for example `24 * * * * cd /path/to/research_assistant && python3 screener/local.py run`). The computer has to be on and online at that time.
 
 ## What gets saved (in `screener_data/`, nothing is ever deleted)

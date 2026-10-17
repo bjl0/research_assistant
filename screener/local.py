@@ -3,7 +3,8 @@
 
   python3 local.py run   [FOLDER]   fetch, screen, update and save everything (default folder: ./screener_data)
   python3 local.py page  [FOLDER]   rewrite FOLDER/dashboard.html (done automatically by run)
-  python3 local.py serve [FOLDER]   open the dashboard at http://localhost:8765 where "Reload prices" fetches fresh prices
+  python3 local.py serve [FOLDER]   open the dashboard in your browser with a "Run scan now" button and a way to save
+                                    your limits; leave the window open while you use it (Ctrl+C to stop)
 
 Needs only Python 3.8+ and internet. It uses screen.py (same folder) for all the screening rules, so the results are
 the same as the hourly Claude task, and the same strategy limits apply (FOLDER/params.json, copied from
@@ -226,7 +227,7 @@ def reprice_cmd(folder):
     now = dt.datetime.now(dt.timezone.utc)
     cur = os.path.join(folder, "current")
     if not os.path.exists(os.path.join(cur, "alerts.json")):
-        raise RuntimeError("No saved run yet. Run  python3 screener/local.py run  first.")
+        raise RuntimeError("No saved scan yet. Press Run scan now first.")
     run = os.path.join(folder, "work_reprice")
     shutil.rmtree(run, ignore_errors=True)
     os.makedirs(os.path.join(run, "out"))
@@ -241,47 +242,6 @@ def reprice_cmd(folder):
         return msg
     finally:
         shutil.rmtree(run, ignore_errors=True)
-
-
-def serve_cmd(folder, port=8765):
-    import http.server, threading, webbrowser
-    if not os.path.exists(os.path.join(folder, "dashboard.html")):
-        write_page(folder)
-    lock = threading.Lock()
-
-    class H(http.server.SimpleHTTPRequestHandler):
-        def __init__(self, *a, **k):
-            super().__init__(*a, directory=os.path.abspath(folder), **k)
-
-        def end_headers(self):
-            self.send_header("Cache-Control", "no-store")
-            super().end_headers()
-
-        def do_POST(self):
-            if self.path != "/reprice":
-                return self.send_error(404)
-            try:
-                with lock:
-                    out, code = reprice_cmd(folder), 200
-            except BaseException as e:
-                out, code = str(e), 500
-            body = json.dumps({"ok": code == 200, "message": out}).encode("utf-8")
-            self.send_response(code)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        def log_message(self, *a):
-            pass
-
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), H)
-    url = "http://localhost:%d/dashboard.html" % port
-    print("Dashboard at", url, "- leave this window open; press Ctrl+C to stop.")
-    try: webbrowser.open(url)
-    except Exception: pass
-    try: srv.serve_forever()
-    except KeyboardInterrupt: print("Stopped.")
 
 
 def _capture(fn):
@@ -326,7 +286,7 @@ def write_logs(folder, stamp, tokens, alerts, summary, now, counts, problems):
 
 def write_data_js(folder):
     cur = os.path.join(folder, "current")
-    d = {k: json.load(open(os.path.join(cur, k + ".json"), encoding="utf-8")) for k in ("tokens", "alerts")}
+    d = {k: S.read_json(os.path.join(cur, k + ".json"), []) for k in ("tokens", "alerts")}   # a missing file (no finished run yet) shows as empty
     d["params"] = S.read_json(os.path.join(folder, "params.json"), {})
     d["written_at"] = S.iso(time.time())
     tmp = os.path.join(cur, "data.js.tmp")
@@ -341,6 +301,153 @@ def write_page(folder):
     i = page.rindex("<script>")
     html = shell.replace("/*D3*/", d3.replace("</script", "<\\/script")).replace("<!--PAGE-HTML-->", page[:i]).replace("/*PAGE-JS*/", page[i + 8:page.rindex("</script>")])
     open(os.path.join(folder, "dashboard.html"), "w", encoding="utf-8").write(html)
+
+
+# ---------------------------------------------------------------- serve: dashboard with a Run button and saved limits
+LIMIT_KEYS = {"max_age_days": (0, 365), "min_liq": (0, 1e12), "min_vol": (0, 1e12), "min_holders": (0, 1e9),
+              "max_top10": (0, 100), "max_wallet": (0, 100), "min_locked": (0, 100)}
+
+
+def clean_limits(o):
+    """Check limits sent by the page. Returns (dict, error)."""
+    out = {}
+    if not isinstance(o, dict):
+        return None, "Expected a set of limits."
+    for k, (lo, hi) in LIMIT_KEYS.items():
+        if k not in o:
+            continue
+        v = o[k]
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v or not lo <= v <= hi:
+            return None, "%s must be a number between %g and %g." % (k, lo, hi)
+        out[k] = int(v) if float(v).is_integer() else v
+    if "no_danger" in o:
+        if not isinstance(o["no_danger"], bool):
+            return None, "no_danger must be on or off."
+        out["no_danger"] = o["no_danger"]
+    return out, None
+
+
+def serve_cmd(folder, port=8765):
+    import threading, subprocess, webbrowser
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    folder = os.path.abspath(folder)
+    os.makedirs(os.path.join(folder, "current"), exist_ok=True)
+    pj = os.path.join(folder, "params.json")
+    if not os.path.exists(pj):
+        shutil.copy(os.path.join(HERE, "..", "dashboard", "params.json"), pj)
+    write_data_js(folder)
+    write_page(folder)
+    lock = threading.Lock()
+    reprice_lock = threading.Lock()
+    st = {"running": False, "started_at": None, "finished_at": None, "ok": None, "tail": []}
+
+    def do_run():
+        env = dict(os.environ, PYTHONIOENCODING="utf-8")
+        try:
+            proc = subprocess.Popen([sys.executable, os.path.abspath(__file__), "run", folder], stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, env=env, encoding="utf-8", errors="replace")
+            for line in proc.stdout:
+                with lock:
+                    st["tail"] = (st["tail"] + [line.rstrip()])[-12:]
+            ok = proc.wait() == 0
+        except Exception as e:
+            ok = False
+            with lock:
+                st["tail"].append("Could not start the scan: %s" % e)
+        with lock:
+            st.update(running=False, ok=ok, finished_at=S.iso(time.time()))
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def _send(self, code, body, ctype="application/json; charset=utf-8"):
+            b = body if isinstance(body, bytes) else body.encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(b)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(b)
+
+        def _json(self, code, o):
+            self._send(code, json.dumps(o))
+
+        def _host_ok(self):   # only this computer's own page may talk to the server (blocks other websites from clicking Run)
+            return self.headers.get("Host", "") in ("127.0.0.1:%d" % port, "localhost:%d" % port)
+
+        def do_GET(self):
+            if not self._host_ok():
+                return self._json(403, {"error": "Wrong host."})
+            path = self.path.split("?")[0]
+            if path in ("/", "/dashboard.html"):
+                return self._send(200, open(os.path.join(folder, "dashboard.html"), "rb").read(), "text/html; charset=utf-8")
+            if path == "/current/data.js":
+                f = os.path.join(folder, "current", "data.js")
+                if not os.path.exists(f):
+                    return self._send(404, "", "text/plain")
+                return self._send(200, open(f, "rb").read(), "text/javascript; charset=utf-8")
+            if path == "/api/status":
+                with lock:
+                    return self._json(200, dict(st))
+            if path == "/api/params":
+                return self._json(200, S.read_json(pj, {}))
+            self._send(404, "Not found", "text/plain")
+
+        def do_POST(self):
+            if not self._host_ok() or self.headers.get("Origin") not in (None, "http://127.0.0.1:%d" % port, "http://localhost:%d" % port):
+                return self._json(403, {"error": "Not allowed."})
+            path = self.path.split("?")[0]
+            n = int(self.headers.get("Content-Length") or 0)
+            if n > 10000:
+                return self._json(413, {"error": "Too large."})
+            raw = self.rfile.read(n)
+            if path == "/api/run":
+                with lock:
+                    if st["running"]:
+                        return self._json(409, {"error": "A scan is already running."})
+                    st.update(running=True, started_at=S.iso(time.time()), finished_at=None, ok=None, tail=[])
+                threading.Thread(target=do_run, daemon=True).start()
+                return self._json(200, {"started": True})
+            if path == "/api/reprice":
+                try:
+                    with lock:
+                        busy = st["running"]
+                    if busy:
+                        return self._json(409, {"ok": False, "message": "A scan is running; prices will update when it finishes."})
+                    with reprice_lock:
+                        msg = reprice_cmd(folder)
+                    return self._json(200, {"ok": True, "message": msg})
+                except Exception as e:
+                    return self._json(500, {"ok": False, "message": str(e)})
+            if path == "/api/params":
+                try:
+                    new, err = clean_limits(json.loads(raw.decode("utf-8")))
+                except ValueError:
+                    new, err = None, "Could not read the limits."
+                if err:
+                    return self._json(400, {"error": err})
+                cur = S.read_json(pj, {})
+                cur.update(new)
+                tmp = pj + ".tmp"
+                open(tmp, "w", encoding="utf-8").write(json.dumps(cur, indent=1, sort_keys=True) + "\n")
+                os.replace(tmp, pj)
+                write_data_js(folder)
+                return self._json(200, cur)
+            self._json(404, {"error": "Not found"})
+
+    try:
+        srv = ThreadingHTTPServer(("127.0.0.1", port), H)
+    except OSError:
+        raise SystemExit("Port %d is already in use. Is the screener already open in another window? Close it, or visit http://127.0.0.1:%d" % (port, port))
+    url = "http://127.0.0.1:%d/" % port
+    print("Screener dashboard is running at", url)
+    print("Leave this window open while you use the page. Press Ctrl+C here to stop.")
+    threading.Timer(0.8, lambda: webbrowser.open(url)).start()
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print("Stopped.")
 
 
 def main():
