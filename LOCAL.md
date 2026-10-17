@@ -14,7 +14,11 @@ You need Python 3 (free, from python.org; on Windows tick "Add Python to PATH" w
 
    If it says it cannot verify certificates (common with Python from python.org on a Mac), open Applications > Python 3.x in Finder, double-click **Install Certificates.command**, and run it again.
 
-4. Open `screener_data/dashboard.html` in your browser (double-click it). After each later run, press **Reload prices** on the page, or refresh the browser tab.
+4. Open the dashboard. For live prices, start the little local server instead of double-clicking the file:
+
+       python3 screener/local.py serve
+
+   It opens `http://localhost:8765/dashboard.html`. Leave that terminal window open; **Reload prices** now fetches fresh market caps for your alerts from DEX Screener (a few seconds). Press Ctrl+C in the terminal to stop it. If you just double-click `screener_data/dashboard.html`, the button can only re-read the last run's saved data.
 
 Run it as often as you like. To make it automatic, schedule that same command every hour or two: Task Scheduler on Windows, `crontab -e` on Mac/Linux (for example `24 * * * * cd /path/to/research_assistant && python3 screener/local.py run`). The computer has to be on and online at that time.
 

@@ -3,6 +3,7 @@
 
   python3 local.py run   [FOLDER]   fetch, screen, update and save everything (default folder: ./screener_data)
   python3 local.py page  [FOLDER]   rewrite FOLDER/dashboard.html (done automatically by run)
+  python3 local.py serve [FOLDER]   open the dashboard at http://localhost:8765 where "Reload prices" fetches fresh prices
 
 Needs only Python 3.8+ and internet. It uses screen.py (same folder) for all the screening rules, so the results are
 the same as the hourly Claude task, and the same strategy limits apply (FOLDER/params.json, copied from
@@ -220,6 +221,69 @@ def run_cmd(folder):
     print("Saved to", os.path.abspath(folder), "- open dashboard.html in a browser.")
 
 
+def reprice_cmd(folder):
+    """Refresh only the market caps of tracked alerts (what the dashboard's Reload prices button does when served)."""
+    now = dt.datetime.now(dt.timezone.utc)
+    cur = os.path.join(folder, "current")
+    if not os.path.exists(os.path.join(cur, "alerts.json")):
+        raise RuntimeError("No saved run yet. Run  python3 screener/local.py run  first.")
+    run = os.path.join(folder, "work_reprice")
+    shutil.rmtree(run, ignore_errors=True)
+    os.makedirs(os.path.join(run, "out"))
+    try:
+        shutil.copy(os.path.join(folder, "params.json"), os.path.join(run, "params.json"))
+        shutil.copy(os.path.join(cur, "alerts.json"), os.path.join(run, "out", "alerts.json"))
+        open(os.path.join(run, "as_of.txt"), "w", encoding="utf-8").write(S.iso(now.timestamp()))
+        sys.argv = ["screen.py", "reprice", run]
+        msg = _capture(S.main)
+        shutil.copy(os.path.join(run, "out", "alerts.json"), os.path.join(cur, "alerts.json"))
+        write_data_js(folder)
+        return msg
+    finally:
+        shutil.rmtree(run, ignore_errors=True)
+
+
+def serve_cmd(folder, port=8765):
+    import http.server, threading, webbrowser
+    if not os.path.exists(os.path.join(folder, "dashboard.html")):
+        write_page(folder)
+    lock = threading.Lock()
+
+    class H(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *a, **k):
+            super().__init__(*a, directory=os.path.abspath(folder), **k)
+
+        def end_headers(self):
+            self.send_header("Cache-Control", "no-store")
+            super().end_headers()
+
+        def do_POST(self):
+            if self.path != "/reprice":
+                return self.send_error(404)
+            try:
+                with lock:
+                    out, code = reprice_cmd(folder), 200
+            except BaseException as e:
+                out, code = str(e), 500
+            body = json.dumps({"ok": code == 200, "message": out}).encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), H)
+    url = "http://localhost:%d/dashboard.html" % port
+    print("Dashboard at", url, "- leave this window open; press Ctrl+C to stop.")
+    try: webbrowser.open(url)
+    except Exception: pass
+    try: srv.serve_forever()
+    except KeyboardInterrupt: print("Stopped.")
+
+
 def _capture(fn):
     import io, contextlib
     buf = io.StringIO()
@@ -283,7 +347,7 @@ def main():
     for stream in (sys.stdout, sys.stderr):   # Windows consoles default to a narrow encoding that chokes on token names
         try: stream.reconfigure(encoding="utf-8", errors="replace")
         except Exception: pass
-    if len(sys.argv) < 2 or sys.argv[1] not in ("run", "page"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("run", "page", "serve"):
         raise SystemExit(__doc__)
     # default: a screener_data folder next to the screener folder, wherever the command is typed
     folder = sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, "..", "screener_data")
@@ -291,6 +355,8 @@ def main():
         write_data_js(folder) if os.path.exists(os.path.join(folder, "current", "alerts.json")) else None
         write_page(folder)
         print("Wrote", os.path.join(folder, "dashboard.html"))
+    elif sys.argv[1] == "serve":
+        serve_cmd(folder)
     else:
         run_cmd(folder)
 

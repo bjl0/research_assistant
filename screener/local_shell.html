@@ -79,7 +79,21 @@ body{margin:0 auto;max-width:1280px;padding:24px 16px 48px;background:var(--colo
     refresh(id) {
       if (!state[id]) return;
       state[id] = {...state[id], refreshing: true};
-      if (id === 'alerts') load(() => { for (const k of ['tokens', 'alerts']) state[k] = {...state[k], refreshing: false}; emit(); });
+      const done = (msg) => load(() => {
+        for (const k of ['tokens', 'alerts']) state[k] = {...state[k], refreshing: false};
+        emit();
+        const n = document.getElementById('reload-note');
+        if (n && msg) n.textContent = msg;
+      });
+      if (id !== 'alerts') return;
+      // opened through `local.py serve`: fetch fresh prices first; opened as a plain file: just re-read the last run
+      if (location.protocol === 'http:' || location.protocol === 'https:') {
+        fetch('/reprice', {method: 'POST'}).then((r) => r.json())
+          .then((j) => done(j.ok ? 'Prices updated just now.' : 'Could not fetch new prices: ' + j.message))
+          .catch(() => done('Could not reach the local server, showing the last saved run.'));
+      } else {
+        done('Opened as a file, so this only re-reads the last run. Run  python3 screener/local.py serve  for live prices.');
+      }
     },
     colors: ['#3d6fb4', '#c4622d', '#4a8f5d'],
   };
