@@ -22,8 +22,14 @@
 .ls-btn{font:inherit;font-size:var(--cds-font-size-caption);color:var(--color-fg);background:var(--color-bg);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:var(--cds-pad-xs) var(--cds-pad-sm);cursor:pointer}
 .ls-btn[aria-pressed="true"]{border-color:var(--color-fg);font-weight:var(--cds-font-weight-medium)}
 .ls-views{display:flex;flex-wrap:wrap;gap:var(--cds-gap-xs)}
-.ls-alerts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,21rem),1fr));gap:var(--cds-gap-md)}
+.ls-alerts{display:grid;grid-template-columns:1fr;gap:var(--cds-gap-md)}
 .ls-alert{background:var(--color-bg);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:var(--cds-pad-md);display:flex;flex-direction:column;gap:var(--cds-gap-sm);min-width:0}
+.ls-alert-id,.ls-alert-body{display:flex;flex-direction:column;gap:var(--cds-gap-sm);min-width:0}
+@media (min-width:56rem){
+  .ls-alert{flex-direction:row;gap:var(--cds-gap-lg)}
+  .ls-alert-id{flex:0 0 19rem}
+  .ls-alert-body{flex:1 1 0}
+}
 .ls-alert.ls-alert-up{border:2px solid var(--color-ok)}
 .ls-alert-top{display:flex;flex-wrap:wrap;gap:var(--cds-gap-sm);align-items:baseline;justify-content:space-between}
 .ls-alert-who{display:flex;gap:var(--cds-gap-sm);align-items:center;min-width:0}
@@ -616,6 +622,11 @@ const drawAlerts = (src, p) => {
       foot.append(b);
     }
     card.append(foot);
+    // wide row (Blake, 18 Oct): who it is on the left, the numbers on the right; stacks again on a narrow screen
+    const idCol = el('div', 'ls-alert-id'), bodyCol = el('div', 'ls-alert-body');
+    idCol.append(...Array.from(card.childNodes).slice(0, 3));
+    bodyCol.append(...Array.from(card.childNodes));
+    card.replaceChildren(idCol, bodyCol);
     box.append(card);
   }
 };
