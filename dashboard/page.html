@@ -505,6 +505,7 @@ const linksFor = (r, short) => {
   const out = [extLink(safeUrl(r.dexscreener_url, ['https://dexscreener.com/']) || 'https://dexscreener.com/solana/' + encodeURIComponent(r.mint), short ? 'DEX' : 'DEX Screener')];
   const pump = safeUrl(r.pumpfun_url, ['https://pump.fun/']);
   if (pump) out.push(extLink(pump, 'pump.fun'));
+  out.push(extLink('https://gmgn.ai/sol/token/' + encodeURIComponent(r.mint), 'GMGN'));
   const x = safeUrl(r.x_url, ['https://x.com/', 'https://twitter.com/']);
   if (x) out.push(extLink(x, short ? 'X' : (r.x_kind || 'X')));
   return out;
