@@ -105,7 +105,7 @@ def alert_message(a):
     plat = "pump.fun" if mint.endswith("pump") or "pump" in str(a.get("venue") or "").lower() else str(a.get("venue") or "")
     lock = g("locked_lp_pct")
     lp = money(g("liquidity_usd")) + (" 🔒%.0f%% locked" % lock if isinstance(lock, (int, float)) and lock > 0 else "")
-    rows = [("MC@alert", money(a.get("first_alert_cap_usd") or g("market_cap_usd"))),
+    rows = [("MC at alert", money(a.get("first_alert_cap_usd") or g("market_cap_usd"))),
             ("Vol", money(g("volume_24h_usd")) + " (24h)"),
             ("LP", lp),
             ("Vol/LP", "%sx" % g("vol_to_liq") if g("vol_to_liq") is not None else "n/a"),
@@ -116,8 +116,8 @@ def alert_message(a):
             ("Age", str(a.get("first_alert_age") or a.get("age") or "n/a"))]
     rug = [("Flags", str(g("flags") or "none")[:120]),
            ("Linked", "%s wallets" % g("linked_wallets") if g("linked_wallets") is not None else "n/a")]
-    stats = "\n".join(" %s %-8s %s" % ("└" if i == len(rows) - 1 else "├", k, v) for i, (k, v) in enumerate(rows))
-    rugtxt = "\n".join(" %s %-8s %s" % ("└" if i == len(rug) - 1 else "├", k, v) for i, (k, v) in enumerate(rug))
+    stats = "\n".join("%s %s: %s" % ("└" if i == len(rows) - 1 else "├", k, v) for i, (k, v) in enumerate(rows))
+    rugtxt = "\n".join("%s %s: %s" % ("└" if i == len(rug) - 1 else "├", k, v) for i, (k, v) in enumerate(rug))
     soc = []
     x = a.get("x_url")
     if isinstance(x, str) and x.startswith(("https://x.com/", "https://twitter.com/")):
@@ -126,7 +126,7 @@ def alert_message(a):
     if isinstance(pf, str) and pf.startswith("https://pump.fun/"):
         soc.append('<a href="%s">pump.fun</a>' % esc(pf))
     out = ["🚨 <b>New alert: %s</b>" % esc(str(a.get("symbol") or "?")[:20]), esc(str(a.get("name") or "")[:40]) + (" · " + esc(plat) if plat else ""),
-           "", "📊 <b>Stats</b>", "<pre>%s</pre>" % esc(stats), "", "🛡 <b>RugCheck</b>", "<pre>%s</pre>" % esc(rugtxt)]
+           "", "📊 <b>Stats</b>", esc(stats), "", "🛡 <b>RugCheck</b>", esc(rugtxt)]
     if soc:
         out += ["", "🔗 Socials: " + " • ".join(soc)]
     out += ["", '📈 <a href="https://dexscreener.com/solana/%s">DEX Screener</a> • <a href="https://gmgn.ai/sol/token/%s">GMGN</a>' % (mint, mint),
