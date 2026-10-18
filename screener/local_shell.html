@@ -28,6 +28,7 @@ body{margin:0 auto;max-width:1280px;padding:24px 16px 48px;background:var(--colo
 .sv-bar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 12px;padding:.5rem .75rem;border:1px solid var(--color-border-line);border-radius:8px;background:var(--color-panel);font-size:.8125rem}
 .sv-bar button{font:inherit;color:var(--color-fg);background:var(--color-bg);border:1px solid var(--color-border-line);border-radius:8px;padding:.25rem .75rem;cursor:pointer}
 .sv-bar button:disabled{opacity:.5;cursor:default}
+.sv-bar [hidden]{display:none!important}
 .sv-note{color:var(--color-fg-muted)}
 .sv-auto{display:inline-flex;align-items:center;gap:.35rem}
 .sv-auto input[type=number]{width:4.5rem;font:inherit;color:var(--color-fg);background:var(--color-bg);border:1px solid var(--color-border-line);border-radius:6px;padding:.15rem .4rem}
@@ -38,6 +39,8 @@ body{margin:0 auto;max-width:1280px;padding:24px 16px 48px;background:var(--colo
 <div class="sv-bar" id="sv-bar" hidden>
   <button type="button" id="sv-run">Run scan now</button>
   <span class="sv-note" id="sv-status" aria-live="polite"></span>
+  <label class="sv-auto"><input type="checkbox" id="sv-sound" checked> Sound on new alerts</label>
+  <button type="button" id="sv-test" title="Play the sound once">Test sound</button>
   <label class="sv-auto"><input type="checkbox" id="sv-auto"> Auto scan every <input type="number" id="sv-mins" min="5" max="1440" step="1" value="60"> minutes</label>
   <span class="sv-note" id="sv-next" aria-live="off"></span>
 </div>
@@ -61,10 +64,48 @@ body{margin:0 auto;max-width:1280px;padding:24px 16px 48px;background:var(--colo
     }
   };
   const emit = () => { recalc(); for (const f of listeners) f(); };
+  // Sound: a short two-note chime made in the browser (no sound file), played when a data load brings an alert that was not
+  // there before. The first load of the page never plays. Browsers only allow sound after you have clicked or typed on the
+  // page once, so a tab left untouched since it opened may stay silent; Test sound unlocks it.
+  let audio = null, known = null;
+  const soundOn = () => { const c = lsGet('sound'); return c == null || c.on !== false; };
+  const unlock = () => {
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      if (audio.state === 'suspended') audio.resume();
+    } catch (e) { audio = null; }
+  };
+  const chime = () => {
+    unlock();
+    if (!audio) return;
+    const t0 = audio.currentTime + 0.02;
+    [[880, 0], [1318.5, 0.16]].forEach(([f, dt]) => {
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t0 + dt);
+      g.gain.exponentialRampToValueAtTime(0.25, t0 + dt + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + 0.5);
+      o.connect(g); g.connect(audio.destination);
+      o.start(t0 + dt); o.stop(t0 + dt + 0.55);
+    });
+  };
+  window.__screenerSound = {chime, unlock, soundOn, set: (on) => lsSet('sound', {on})};
+  for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, unlock, {once: true, capture: true});
+  const checkNew = (alerts) => {
+    const mints = new Set(alerts.map((a) => a.mint));
+    if (known) {
+      // only alerts the page would actually show count
+      const visible = (a) => !(typeof walletWarning === 'function' && walletWarning(a)) && !(typeof downAlert === 'function' && downAlert(a));
+      const fresh = alerts.filter((a) => !known.has(a.mint) && visible(a));
+      if (fresh.length && soundOn()) chime();
+    }
+    known = mints;
+  };
   const apply = (d) => {
     defaults = d.params || {};
     state.tokens = {status: 'ok', data: d.tokens || []};
     state.alerts = {status: 'ok', data: d.alerts || []};
+    checkNew(state.alerts.data);
     const bar = document.getElementById('local-bar');
     if (bar && d.written_at) bar.textContent = 'Local copy. Last run saved ' + new Date(d.written_at).toLocaleString() + '.';
     emit();
@@ -127,12 +168,28 @@ body{margin:0 auto;max-width:1280px;padding:24px 16px 48px;background:var(--colo
     if (!r.ok) throw new Error(j.error || 'The server said no.');
     return j;
   };
+  // the sound switch is always shown at the top; the scan controls only when served
+  const setupSound = () => {
+    const bar = document.getElementById('sv-bar');
+    bar.hidden = false;
+    for (const id of ['sv-run', 'sv-status', 'sv-auto', 'sv-mins', 'sv-next']) {
+      const n = document.getElementById(id);
+      (n.closest('label') || n).hidden = true;
+    }
+    const soundBox = document.getElementById('sv-sound');
+    soundBox.checked = window.__screenerSound.soundOn();
+    soundBox.addEventListener('change', () => window.__screenerSound.set(soundBox.checked));
+    document.getElementById('sv-test').addEventListener('click', () => window.__screenerSound.chime());
+  };
   const setupServer = async () => {
     if (location.protocol !== 'http:') return;
     let status;
     try { status = await api('/api/status'); } catch (e) { return; }
     const bar = document.getElementById('sv-bar'), btn = document.getElementById('sv-run'), note = document.getElementById('sv-status');
-    bar.hidden = false;
+    for (const id of ['sv-run', 'sv-status', 'sv-auto', 'sv-mins', 'sv-next']) {
+      const n = document.getElementById(id);
+      (n.closest('label') || n).hidden = false;
+    }
     const show = (s) => {
       btn.disabled = s.running;
       btn.textContent = s.running ? 'Scan running…' : 'Run scan now';
@@ -203,6 +260,7 @@ body{margin:0 auto;max-width:1280px;padding:24px 16px 48px;background:var(--colo
     }
   };
   document.addEventListener('DOMContentLoaded', () => {
+    setupSound();
     setupServer();
     const asof = (document.getElementById('as-of') || {}).parentElement;
     if (asof) asof.innerHTML = asof.innerHTML.replace(/A scheduled run refreshes this page about once an hour, so prices here can be up to an hour old/,
