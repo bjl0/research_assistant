@@ -21,6 +21,7 @@
 .ls-check{display:flex;gap:var(--cds-gap-sm);align-items:center;font-size:var(--cds-font-size-body)}
 .ls-btn{font:inherit;font-size:var(--cds-font-size-caption);color:var(--color-fg);background:var(--color-bg);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:var(--cds-pad-xs) var(--cds-pad-sm);cursor:pointer}
 .ls-btn[aria-pressed="true"]{border-color:var(--color-fg);font-weight:var(--cds-font-weight-medium)}
+.ls-platforms{align-items:center;margin-block:var(--cds-gap-sm)}
 .ls-views{display:flex;flex-wrap:wrap;gap:var(--cds-gap-xs)}
 .ls-alerts{display:grid;grid-template-columns:1fr;gap:var(--cds-gap-md)}
 .ls-alert{background:var(--color-bg);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:var(--cds-pad-md);display:flex;flex-direction:column;gap:var(--cds-gap-sm);min-width:0}
@@ -117,6 +118,13 @@
       <button class="ls-btn" type="button" data-alert-view="open" id="alert-view-open" hidden>Not acted on</button>
       <button class="ls-btn" type="button" data-alert-view="watch" id="alert-view-watch" hidden>★ Watchlist</button>
     </div>
+    <div class="ls-views ls-platforms" data-platforms>
+      <span class="ls-note">Platform</span>
+      <button class="ls-btn" type="button" data-platform="all">All</button>
+      <button class="ls-btn" type="button" data-platform="pump.fun">pump.fun</button>
+      <button class="ls-btn" type="button" data-platform="Raydium">Raydium</button>
+      <button class="ls-btn" type="button" data-platform="other">Other</button>
+    </div>
     <div class="ls-alerts dash-skeleton" id="alert-cards" data-source="alerts"></div>
   </section>
 
@@ -159,6 +167,13 @@
       <button class="ls-btn" type="button" data-view="checked">All holder-checked</button>
       <button class="ls-btn" type="button" data-view="all">Everything screened</button>
       <button class="ls-btn" type="button" data-view="up5">Went up 5%+ since alert</button>
+    </div>
+    <div class="ls-views ls-platforms" data-platforms>
+      <span class="ls-note">Platform</span>
+      <button class="ls-btn" type="button" data-platform="all">All</button>
+      <button class="ls-btn" type="button" data-platform="pump.fun">pump.fun</button>
+      <button class="ls-btn" type="button" data-platform="Raydium">Raydium</button>
+      <button class="ls-btn" type="button" data-platform="other">Other</button>
     </div>
     <p class="ls-note" id="up5-note" hidden></p>
     <div class="ls-tablebox" id="up5-box" hidden>
@@ -244,7 +259,7 @@
 
 <script>
 const $ = (s) => document.querySelector(s);
-const DEFAULTS = {max_age_days: 7, min_liq: 10000, min_vol: 10000, min_holders: 500, max_top10: 30, max_wallet: 10, min_locked: 90, no_danger: true, view: 'matches', alert_view: 'all'};
+const DEFAULTS = {max_age_days: 7, min_liq: 10000, min_vol: 10000, min_holders: 500, max_top10: 30, max_wallet: 10, min_locked: 90, no_danger: true, view: 'matches', alert_view: 'all', platform: 'all'};
 const NO_BIG_WALLET = 'No wallet holds 1% or more';
 const SAME_AMOUNTS = /^\d+ top wallets hold near-identical amounts$/;
 const LINKED = /^(\d+) linked wallets \(RugCheck\)$/;   // red from 5 linked wallets
@@ -294,6 +309,7 @@ const params = () => {
   p.no_danger = p.no_danger !== false;
   if (!['matches', 'near', 'checked', 'all', 'up5'].includes(p.view)) p.view = 'matches';
   if (!['all', 'new', 'meets', 'open', 'watch'].includes(p.alert_view)) p.alert_view = 'all';
+  if (!['all', 'pump.fun', 'Raydium', 'other'].includes(p.platform)) p.platform = 'all';
   return p;
 };
 
@@ -374,6 +390,12 @@ $('#views').addEventListener('click', (event) => {
   const b = event.target.closest('button[data-view]');
   if (b) dash.setParams({view: b.dataset.view});
 });
+for (const bar of document.querySelectorAll('[data-platforms]')) {
+  bar.addEventListener('click', (event) => {
+    const b = event.target.closest('button[data-platform]');
+    if (b) dash.setParams({platform: b.dataset.platform});
+  });
+}
 $('#alert-views').addEventListener('click', (event) => {
   const b = event.target.closest('button[data-alert-view]');
   if (b) dash.setParams({alert_view: b.dataset.alertView});
@@ -437,6 +459,12 @@ const platformOf = (r) => {
   if (/raydium/i.test(v)) return 'Raydium';
   if (/meteora/i.test(v)) return 'Meteora';
   return v || '';
+};
+// platform filter (Blake, 18 Oct): pump.fun covers the bonding curve and PumpSwap; Other is everything not pump.fun or Raydium
+const onPlatform = (r, p) => {
+  if (p.platform === 'all') return true;
+  const plat = platformOf(r.venue ? r : {...r, venue: (tokenByMint.get(r.mint) || {}).venue});
+  return p.platform === 'other' ? plat !== 'pump.fun' && plat !== 'Raydium' : plat === p.platform;
 };
 const pairNodes = (r) => {
   const quote = String(r.quote || (tokenByMint.get(r.mint) || {}).quote || '').slice(0, 20);
@@ -510,6 +538,7 @@ const drawAlerts = (src, p) => {
   $('#alert-view-open').hidden = !store;
   $('#alert-view-watch').hidden = !store;
   $('#alert-view-watch').textContent = '★ Watchlist (' + (src.status === 'ok' ? src.data.filter((a) => watch[a.mint]).length : 0) + ')';
+  for (const b of document.querySelectorAll('[data-platforms] button')) b.setAttribute('aria-pressed', String(b.dataset.platform === p.platform));
   for (const b of document.querySelectorAll('#alert-views button')) b.setAttribute('aria-pressed', String(b.dataset.alertView === p.alert_view));
   box.replaceChildren();
   if (src.status !== 'ok') {
@@ -522,6 +551,7 @@ const drawAlerts = (src, p) => {
   }
   // the watchlist tab shows every watched token, even one the main views hide (removed, or carrying a wallet warning)
   let rows = p.alert_view === 'watch' ? src.data.filter((a) => watch[a.mint]) : src.data.filter((a) => !walletWarning(a) && !downAlert(a));
+  rows = rows.filter((a) => onPlatform(a, p));
   if (p.alert_view === 'new') rows = rows.filter((a) => a.is_new);
   if (p.alert_view === 'meets') rows = rows.filter((a) => a.now === 'Meets strategy');
   if (p.alert_view === 'open') rows = rows.filter((a) => !acted[a.mint]);
@@ -760,7 +790,7 @@ const drawUp5 = (src, p) => {
     note(src.status === 'error' ? 'Failed to load' : 'Loading…');
     return;
   }
-  const rows = src.data.filter(isSaved).sort((a, b) => {
+  const rows = src.data.filter(isSaved).filter((r) => onPlatform(r, p)).sort((a, b) => {
     const x = a[up5Key], y = b[up5Key];
     if (x == null && y == null) return 0;
     if (x == null) return 1;
@@ -943,7 +973,7 @@ function draw() {
     : 'No new alerts in the last run. ';
   $('#takeaway').textContent = lead + `${int(matches.length)} of ${int(scored.length)} screened tokens meet every limit on screen now, and ${int(near.length)} miss by one.`;
   const view = {matches, near, checked: scored.filter((d) => d.t.holder_check === 'Checked'), all: scored}[p.view];
-  if (p.view !== 'up5') drawTable(view, p);
+  if (p.view !== 'up5') drawTable(view.filter((d) => onPlatform(d.t, p)), p);
   drawChart(scored, p);
 }
 dash.onData(draw);
