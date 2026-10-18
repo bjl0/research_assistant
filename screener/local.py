@@ -67,6 +67,55 @@ def get_json(url, tries=3):
     raise RuntimeError("%s: %s" % (url.split("?")[0], last))
 
 
+def telegram_settings(folder):
+    """Bot token and chat id, from screener_data/telegram.json or the TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID variables."""
+    c = S.read_json(os.path.join(folder, "telegram.json"), {})
+    c = c if isinstance(c, dict) else {}
+    return (os.environ.get("TELEGRAM_BOT_TOKEN") or c.get("bot_token") or "").strip(), str(os.environ.get("TELEGRAM_CHAT_ID") or c.get("chat_id") or "").strip()
+
+
+def telegram_send(token, chat, text):
+    req = urllib.request.Request("https://api.telegram.org/bot%s/sendMessage" % token,
+                                 data=json.dumps({"chat_id": chat, "text": text, "disable_web_page_preview": True}).encode("utf-8"),
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=20) as f:
+        f.read()
+
+
+def money(v):
+    return "$%s" % format(int(v), ",") if isinstance(v, (int, float)) else "n/a"
+
+
+def notify_new_alerts(folder, prev_alerts, alerts):
+    """Telegram message for each alert whose token was never in the alert history before this run. Plain text, never stops a run."""
+    token, chat = telegram_settings(folder)
+    if not token or not chat:
+        return
+    seen = {a.get("mint") for a in prev_alerts}
+    new = [a for a in alerts if a.get("mint") not in seen and not a.get("removed_at")]
+    sent = 0
+    try:
+        for a in new[:10]:
+            mint = str(a.get("mint") or "")
+            if not re.fullmatch(S.B58, mint):
+                continue
+            plat = "pump.fun" if mint.endswith("pump") or "pump" in str(a.get("venue") or "").lower() else str(a.get("venue") or "")
+            lines = ["New alert: %s (%s)" % (str(a.get("symbol") or "?")[:20], str(a.get("name") or "")[:40]),
+                     "Market cap %s · liquidity %s · 24h volume %s" % (money(a.get("first_alert_cap_usd")), money(a.get("liquidity_usd")), money(a.get("volume_24h_usd"))),
+                     "Holders %s · top 10 wallets %s%% · largest %s%%" % (a.get("holders", "n/a"), a.get("top10_wallets_pct", "n/a"), a.get("largest_wallet_pct", "n/a")),
+                     "Platform: %s" % (plat or "n/a"),
+                     "https://dexscreener.com/solana/" + mint,
+                     "https://gmgn.ai/sol/token/" + mint]
+            telegram_send(token, chat, "\n".join(lines))
+            sent += 1
+        if len(new) > 10:
+            telegram_send(token, chat, "...and %d more new alerts. Open the dashboard." % (len(new) - 10))
+    except Exception as e:
+        print("Telegram message failed (the scan itself is fine):", getattr(e, "reason", e))
+    if sent:
+        print("Sent %d Telegram alert(s)." % sent)
+
+
 def save(path, obj):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     json.dump(obj, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=0)
@@ -215,6 +264,7 @@ def run_cmd(folder):
     write_logs(folder, stamp, tokens, alerts, summary, now, (ncand, ntrack, npairs, nrep), problems)
     write_data_js(folder)
     write_page(folder)
+    notify_new_alerts(folder, prev_alerts, alerts)
     shutil.rmtree(run, ignore_errors=True)
     print("Fetched %d candidates (+%d earlier alerts), %d market pairs, %d RugCheck reports." % (ncand, ntrack - ncand, npairs, nrep))
     for x in problems:

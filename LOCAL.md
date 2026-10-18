@@ -56,3 +56,14 @@ The first run carries on from the alert history saved in `data/alerts.json`, so 
 ## Automatic scans while the dashboard is open
 
 At the top of the served dashboard, tick **Auto scan every N minutes** and type the number of minutes you want (5 or more). The page counts down and starts a scan by itself, then refreshes. Your choice is remembered. It only works while the dashboard page and the screener window (where you ran `serve`) both stay open and the computer is awake.
+
+## Telegram alerts (optional)
+
+Each scan can message you on Telegram for every token that becomes an alert for the first time.
+
+1. In Telegram, message **@BotFather**, send `/newbot`, follow the steps, and copy the **token** it gives you (keep it private).
+2. Open a chat with your new bot and send it any message (for example "hi").
+3. Open `https://api.telegram.org/bot<YOUR TOKEN>/getUpdates` in a browser and find `"chat":{"id":123456789` - that number is your **chat id**.
+4. Create a file `screener_data/telegram.json` containing: `{"bot_token": "YOUR TOKEN", "chat_id": "123456789"}`
+
+Messages only go out from scans (terminal, serve button or auto scan), never from Reload prices. If Telegram can't be reached, the scan still finishes. Delete the file to switch alerts off.
