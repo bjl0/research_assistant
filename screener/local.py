@@ -21,7 +21,7 @@ FOLDER holds
   log/new_alerts.txt    every new alert ever raised, with the time
 Nothing is ever deleted by the program.
 """
-import sys, os, re, json, csv, time, shutil, ssl, datetime as dt, urllib.request, urllib.error
+import sys, os, re, json, html, csv, time, shutil, ssl, datetime as dt, urllib.request, urllib.error
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -76,14 +76,58 @@ def telegram_settings(folder):
 
 def telegram_send(token, chat, text):
     req = urllib.request.Request("https://api.telegram.org/bot%s/sendMessage" % token,
-                                 data=json.dumps({"chat_id": chat, "text": text, "disable_web_page_preview": True}).encode("utf-8"),
+                                 data=json.dumps({"chat_id": chat, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}).encode("utf-8"),
                                  headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=20) as f:
         f.read()
 
 
 def money(v):
-    return "$%s" % format(int(v), ",") if isinstance(v, (int, float)) else "n/a"
+    """$68.2K style; None becomes n/a."""
+    if not isinstance(v, (int, float)):
+        return "n/a"
+    for lim, suf in ((1e9, "B"), (1e6, "M"), (1e3, "K")):
+        if abs(v) >= lim:
+            return "$%.1f%s" % (v / lim, suf)
+    return "$%d" % v
+
+
+def pct(v):
+    return "%+.0f%%" % v if isinstance(v, (int, float)) else "n/a"
+
+
+def alert_message(a):
+    """Telegram HTML message for one new alert. Names and links come from strangers, so everything is escaped or checked."""
+    esc = lambda x: html.escape(str(x), quote=True)
+    snap = a.get("first_alert_snapshot") or {}
+    g = lambda k: snap.get(k) if snap.get(k) is not None else a.get(k)
+    mint = str(a.get("mint") or "")
+    plat = "pump.fun" if mint.endswith("pump") or "pump" in str(a.get("venue") or "").lower() else str(a.get("venue") or "")
+    lock = g("locked_lp_pct")
+    lp = money(g("liquidity_usd")) + (" 🔒%.0f%% locked" % lock if isinstance(lock, (int, float)) and lock > 0 else "")
+    rows = [("MC", money(a.get("first_alert_cap_usd") or g("market_cap_usd"))),
+            ("Vol", money(g("volume_24h_usd")) + " (24h)"),
+            ("LP", lp),
+            ("1H", pct(g("change_1h_pct"))),
+            ("24H", "%s  🅑%s Ⓢ%s" % (pct(g("change_24h_pct")), g("buys_24h") if g("buys_24h") is not None else "?", g("sells_24h") if g("sells_24h") is not None else "?")),
+            ("Hold", "{:,}".format(g("holders")) if isinstance(g("holders"), (int, float)) else "n/a"),
+            ("Top10", "%s%% · max %s%%" % (g("top10_wallets_pct"), g("largest_wallet_pct"))),
+            ("Age", str(a.get("first_alert_age") or a.get("age") or "n/a"))]
+    stats = "\n".join(" %s %-5s %s" % ("└" if i == len(rows) - 1 else "├", k, v) for i, (k, v) in enumerate(rows))
+    soc = []
+    x = a.get("x_url")
+    if isinstance(x, str) and x.startswith(("https://x.com/", "https://twitter.com/")):
+        soc.append('<a href="%s">𝕏</a>' % esc(x))
+    pf = a.get("pumpfun_url")
+    if isinstance(pf, str) and pf.startswith("https://pump.fun/"):
+        soc.append('<a href="%s">pump.fun</a>' % esc(pf))
+    out = ["🚨 <b>New alert: %s</b>" % esc(str(a.get("symbol") or "?")[:20]), esc(str(a.get("name") or "")[:40]) + (" · " + esc(plat) if plat else ""),
+           "", "📊 <b>Stats</b>", "<pre>%s</pre>" % esc(stats)]
+    if soc:
+        out += ["", "🔗 Socials: " + " • ".join(soc)]
+    out += ["", '📈 <a href="https://dexscreener.com/solana/%s">DEX Screener</a> • <a href="https://gmgn.ai/sol/token/%s">GMGN</a>' % (mint, mint),
+            "<code>%s</code>" % mint]
+    return "\n".join(out)
 
 
 def notify_new_alerts(folder, prev_alerts, alerts):
@@ -99,14 +143,7 @@ def notify_new_alerts(folder, prev_alerts, alerts):
             mint = str(a.get("mint") or "")
             if not re.fullmatch(S.B58, mint):
                 continue
-            plat = "pump.fun" if mint.endswith("pump") or "pump" in str(a.get("venue") or "").lower() else str(a.get("venue") or "")
-            lines = ["New alert: %s (%s)" % (str(a.get("symbol") or "?")[:20], str(a.get("name") or "")[:40]),
-                     "Market cap %s · liquidity %s · 24h volume %s" % (money(a.get("first_alert_cap_usd")), money(a.get("liquidity_usd")), money(a.get("volume_24h_usd"))),
-                     "Holders %s · top 10 wallets %s%% · largest %s%%" % (a.get("holders", "n/a"), a.get("top10_wallets_pct", "n/a"), a.get("largest_wallet_pct", "n/a")),
-                     "Platform: %s" % (plat or "n/a"),
-                     "https://dexscreener.com/solana/" + mint,
-                     "https://gmgn.ai/sol/token/" + mint]
-            telegram_send(token, chat, "\n".join(lines))
+            telegram_send(token, chat, alert_message(a))
             sent += 1
         if len(new) > 10:
             telegram_send(token, chat, "...and %d more new alerts. Open the dashboard." % (len(new) - 10))
