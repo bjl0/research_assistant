@@ -53,6 +53,7 @@
 .ls-check{color:var(--color-warn);font-weight:var(--cds-font-weight-medium)}
 .ls-pair{color:var(--color-fg-muted);font-size:var(--cds-font-size-caption);white-space:nowrap}
 .ls-red{color:var(--color-bad);font-weight:var(--cds-font-weight-medium)}
+.ls-foot-btns{display:inline-flex;gap:var(--cds-gap-sm)}
 .ls-alert-foot{display:flex;flex-wrap:wrap;gap:var(--cds-gap-sm);align-items:center;justify-content:space-between;font-size:var(--cds-font-size-caption);color:var(--color-fg-muted)}
 .ls-chart{position:relative;min-height:300px}
 .ls-chart svg{display:block}
@@ -111,6 +112,7 @@
       <button class="ls-btn" type="button" data-alert-view="new">New in the last run</button>
       <button class="ls-btn" type="button" data-alert-view="meets">Still meets strategy</button>
       <button class="ls-btn" type="button" data-alert-view="open" id="alert-view-open" hidden>Not acted on</button>
+      <button class="ls-btn" type="button" data-alert-view="watch" id="alert-view-watch" hidden>★ Watchlist</button>
     </div>
     <div class="ls-alerts dash-skeleton" id="alert-cards" data-source="alerts"></div>
   </section>
@@ -288,7 +290,7 @@ const params = () => {
   }
   p.no_danger = p.no_danger !== false;
   if (!['matches', 'near', 'checked', 'all', 'up5'].includes(p.view)) p.view = 'matches';
-  if (!['all', 'new', 'meets', 'open'].includes(p.alert_view)) p.alert_view = 'all';
+  if (!['all', 'new', 'meets', 'open', 'watch'].includes(p.alert_view)) p.alert_view = 'all';
   return p;
 };
 
@@ -309,7 +311,7 @@ const failsOf = (t, p) => {
 let sortKey = 'liquidity_usd', sortDir = -1;
 
 // "Acted on" marks are saved per viewer where this view allows it; without that the control stays hidden.
-let store = null, acted = {};
+let store = null, acted = {}, watch = {};
 const capability = async (name) => {
   const c = globalThis.claude;
   if (!c) return null;
@@ -328,21 +330,25 @@ const capability = async (name) => {
     const snap = await ref.get();
     const saved = snap && snap.exists ? snap.data() : null;
     acted = saved && saved.acted && typeof saved.acted === 'object' ? {...saved.acted} : {};
+    watch = saved && saved.watch && typeof saved.watch === 'object' ? {...saved.watch} : {};
     store = ref;
     draw();
   } catch (e) {
     store = null;
   }
 })();
-const toggleActed = async (mint) => {
+// both marks live in the same per-viewer document, so every write sends both
+const toggleMark = async (kind, mint) => {
   if (!store) return;
-  const before = {...acted};
-  if (acted[mint]) delete acted[mint]; else acted[mint] = true;
+  const before = {acted: {...acted}, watch: {...watch}};
+  const m = kind === 'watch' ? watch : acted;
+  if (m[mint]) delete m[mint]; else m[mint] = true;
   draw();
   try {
-    await store.set({acted});
+    await store.set({acted, watch});
   } catch (e) {
-    acted = before;
+    acted = before.acted;
+    watch = before.watch;
     store = null;
     draw();
   }
@@ -369,7 +375,9 @@ $('#alert-views').addEventListener('click', (event) => {
 });
 $('#alert-cards').addEventListener('click', (event) => {
   const b = event.target.closest('button[data-acted]');
-  if (b) toggleActed(b.dataset.acted);
+  if (b) return toggleMark('acted', b.dataset.acted);
+  const w = event.target.closest('button[data-watch]');
+  if (w) toggleMark('watch', w.dataset.watch);
 });
 // shows the newest saved run; the page itself cannot reach DEX Screener
 let reloading = false;
@@ -490,6 +498,8 @@ const resultPill = (t, fails) => {
 const drawAlerts = (src, p) => {
   const box = $('#alert-cards');
   $('#alert-view-open').hidden = !store;
+  $('#alert-view-watch').hidden = !store;
+  $('#alert-view-watch').textContent = '★ Watchlist (' + (src.status === 'ok' ? src.data.filter((a) => watch[a.mint]).length : 0) + ')';
   for (const b of document.querySelectorAll('#alert-views button')) b.setAttribute('aria-pressed', String(b.dataset.alertView === p.alert_view));
   box.replaceChildren();
   if (src.status !== 'ok') {
@@ -500,13 +510,14 @@ const drawAlerts = (src, p) => {
     }
     return;
   }
-  let rows = src.data.filter((a) => !walletWarning(a) && !downAlert(a));
+  // the watchlist tab shows every watched token, even one the main views hide (removed, or carrying a wallet warning)
+  let rows = p.alert_view === 'watch' ? src.data.filter((a) => watch[a.mint]) : src.data.filter((a) => !walletWarning(a) && !downAlert(a));
   if (p.alert_view === 'new') rows = rows.filter((a) => a.is_new);
   if (p.alert_view === 'meets') rows = rows.filter((a) => a.now === 'Meets strategy');
   if (p.alert_view === 'open') rows = rows.filter((a) => !acted[a.mint]);
   rows.sort((a, b) => (b.is_new ? 1 : 0) - (a.is_new ? 1 : 0) || String(b.first_alert_at).localeCompare(String(a.first_alert_at)) || (b.change_since_first_pct ?? -1e9) - (a.change_since_first_pct ?? -1e9));
   if (!rows.length) {
-    box.append(el('p', 'ls-note', src.data.length ? 'No alerts in this view.' : 'No token has met your saved strategy yet. The next hourly run will check again.'));
+    box.append(el('p', 'ls-note', p.alert_view === 'watch' ? 'Nothing on your watchlist yet. Press Watch on an alert card to add it.' : src.data.length ? 'No alerts in this view.' : 'No token has met your saved strategy yet. The next hourly run will check again.'));
     return;
   }
   for (const a of rows) {
@@ -619,7 +630,13 @@ const drawAlerts = (src, p) => {
       b.type = 'button';
       b.dataset.acted = a.mint;
       b.setAttribute('aria-pressed', String(Boolean(acted[a.mint])));
-      foot.append(b);
+      const wb = el('button', 'ls-btn', watch[a.mint] ? '★ Watching' : '☆ Watch');
+      wb.type = 'button';
+      wb.dataset.watch = a.mint;
+      wb.setAttribute('aria-pressed', String(Boolean(watch[a.mint])));
+      const btns = el('span', 'ls-foot-btns');
+      btns.append(wb, b);
+      foot.append(btns);
     }
     card.append(foot);
     // wide row (Blake, 18 Oct): who it is on the left, the numbers on the right; stacks again on a narrow screen
