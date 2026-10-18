@@ -114,11 +114,8 @@ def alert_message(a):
             ("Hold", "{:,}".format(g("holders")) if isinstance(g("holders"), (int, float)) else "n/a"),
             ("Top10", "%s%% · max %s%%" % (g("top10_wallets_pct"), g("largest_wallet_pct"))),
             ("Age", str(a.get("first_alert_age") or a.get("age") or "n/a"))]
-    cp = g("creator_pct")
-    rug = [("Score", "%s (RugCheck, lower is safer)" % g("rugcheck_score") if g("rugcheck_score") is not None else "n/a"),
-           ("Flags", str(g("flags") or "none")[:120]),
-           ("Linked", "%s wallets" % g("linked_wallets") if g("linked_wallets") is not None else "n/a"),
-           ("Creator", "%s%% held" % cp if cp is not None else "n/a")]
+    rug = [("Flags", str(g("flags") or "none")[:120]),
+           ("Linked", "%s wallets" % g("linked_wallets") if g("linked_wallets") is not None else "n/a")]
     stats = "\n".join(" %s %-8s %s" % ("└" if i == len(rows) - 1 else "├", k, v) for i, (k, v) in enumerate(rows))
     rugtxt = "\n".join(" %s %-8s %s" % ("└" if i == len(rug) - 1 else "├", k, v) for i, (k, v) in enumerate(rug))
     soc = []
