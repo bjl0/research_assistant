@@ -167,6 +167,7 @@
       <button class="ls-btn" type="button" data-view="checked">All holder-checked</button>
       <button class="ls-btn" type="button" data-view="all">Everything screened</button>
       <button class="ls-btn" type="button" data-view="up5">Went up 5%+ since alert</button>
+      <button class="ls-btn" type="button" data-view="removed">Removed: price fell</button>
     </div>
     <div class="ls-views ls-platforms" data-platforms>
       <span class="ls-note">Platform</span>
@@ -197,6 +198,7 @@
           <th class="ls-l" data-field="flags">Flags to read</th>
           <th class="ls-l" data-field="top_traders">Top traders holding</th>
           <th class="ls-l" data-field="now">Status</th>
+          <th data-field="removed_at"><button class="ls-sort" type="button" data-up5-sort="removed_at">Removed</button></th>
         </tr></thead>
         <tbody id="up5-rows"></tbody>
       </table>
@@ -307,7 +309,7 @@ const params = () => {
     p[k] = Number.isFinite(n) ? n : DEFAULTS[k];
   }
   p.no_danger = p.no_danger !== false;
-  if (!['matches', 'near', 'checked', 'all', 'up5'].includes(p.view)) p.view = 'matches';
+  if (!['matches', 'near', 'checked', 'all', 'up5', 'removed'].includes(p.view)) p.view = 'matches';
   if (!['all', 'new', 'meets', 'open', 'watch'].includes(p.alert_view)) p.alert_view = 'all';
   if (!['all', 'pump.fun', 'Raydium', 'other'].includes(p.platform)) p.platform = 'all';
   return p;
@@ -766,9 +768,16 @@ const drawTable = (rows, p) => {
 // including ones the removal rules took off the main list. It reads the alert history, not the latest run.
 const isSaved = (a) => Boolean(a.went_up_5_at) || (typeof a.peak_gain_pct === 'number' && a.peak_gain_pct >= 5)
   || (a.first_alert_cap_usd > 0 && a.peak_cap_usd >= a.first_alert_cap_usd * 1.05);
-let up5Key = 'peak_gain_pct', up5Dir = -1;
+// Blake (18 Oct): the history of every alert the price rules took off the list (cap under $10K, or down 90%+ from the first alert or the all-time high)
+const isPriceRemoved = (a) => Boolean(a.removed_at) && /under \$10K|down 90%/.test(String(a.removed_reason || ''));
+let up5Key = 'peak_gain_pct', up5Dir = -1, up5Last = 'up5';
 const drawUp5 = (src, p) => {
-  const on = p.view === 'up5';
+  const on = p.view === 'up5' || p.view === 'removed';
+  if (on && p.view !== up5Last) {
+    up5Last = p.view;
+    up5Key = p.view === 'removed' ? 'removed_at' : 'peak_gain_pct';
+    up5Dir = -1;
+  }
   $('#token-box').hidden = on;
   $('#up5-box').hidden = !on;
   $('#up5-note').hidden = !on;
@@ -782,7 +791,7 @@ const drawUp5 = (src, p) => {
   const note = (text) => {
     const tr = document.createElement('tr');
     const td = cell(text, 'ls-empty');
-    td.colSpan = 18;
+    td.colSpan = 19;
     tr.append(td);
     body.replaceChildren(tr);
   };
@@ -791,7 +800,7 @@ const drawUp5 = (src, p) => {
     note(src.status === 'error' ? 'Failed to load' : 'Loading…');
     return;
   }
-  const rows = src.data.filter(isSaved).filter((r) => onPlatform(r, p)).sort((a, b) => {
+  const rows = src.data.filter(p.view === 'removed' ? isPriceRemoved : isSaved).filter((r) => onPlatform(r, p)).sort((a, b) => {
     const x = a[up5Key], y = b[up5Key];
     if (x == null && y == null) return 0;
     if (x == null) return 1;
@@ -800,8 +809,11 @@ const drawUp5 = (src, p) => {
     return up5Dir * (x - y);
   });
   const gone = rows.filter((a) => a.removed_at).length;
-  $('#up5-note').textContent = `${int(rows.length)} ${rows.length === 1 ? 'token has' : 'tokens have'} gone 5% or more above ${rows.length === 1 ? 'its' : 'their'} market cap at the first alert. They are saved for good: ${int(gone)} of them have since been taken off the main list by your removal rules, and still show here. “Peak” and “max drawdown” come from pump.fun's price history since the alert: the highest cap reached, and the lowest cap compared with the first-alert cap.`;
-  if (!rows.length) return note('No token has gone up 5% or more since its alert yet.');
+  if (p.view === 'removed') {
+    $('#up5-note').textContent = `${int(rows.length)} ${rows.length === 1 ? 'token was' : 'tokens were'} taken off the screener because the price fell: market cap under $10K, or down 90% or more since the first alert or from the all-time high. This is the full history; the rows are kept for good and never re-alert. The “Removed” column says when, and Status says why.`;
+    if (!rows.length) return note('No token has been removed for a price fall yet.');
+  } else $('#up5-note').textContent = `${int(rows.length)} ${rows.length === 1 ? 'token has' : 'tokens have'} gone 5% or more above ${rows.length === 1 ? 'its' : 'their'} market cap at the first alert. They are saved for good: ${int(gone)} of them have since been taken off the main list by your removal rules, and still show here. “Peak” and “max drawdown” come from pump.fun's price history since the alert: the highest cap reached, and the lowest cap compared with the first-alert cap.`;
+  if (!rows.length) return note(p.view === 'removed' ? 'No token has been removed for a price fall yet.' : 'No token has gone up 5% or more since its alert yet.');
   body.replaceChildren(...rows.map((a) => {
     const tr = document.createElement('tr');
     tr.dataset.key = a.mint;
@@ -829,6 +841,7 @@ const drawUp5 = (src, p) => {
       cell(dashIfNull(a.liquidity_usd, usd)), cell(dashIfNull(a.volume_24h_usd, usd)), cell(dashIfNull(a.holders, int)),
       cell(dashIfNull(a.top10_wallets_pct, pct)), flagCell,
       cell(a.top_traders || '', 'ls-l ls-wrap' + (a.top_traders ? ' ls-trader-cell' : '')), cell(a.now || '', 'ls-l ls-wrap'),
+      cell(a.removed_at ? when(a.removed_at) : '—'),
     );
     return tr;
   }));
@@ -974,7 +987,7 @@ function draw() {
     : 'No new alerts in the last run. ';
   $('#takeaway').textContent = lead + `${int(matches.length)} of ${int(scored.length)} screened tokens meet every limit on screen now, and ${int(near.length)} miss by one.`;
   const view = {matches, near, checked: scored.filter((d) => d.t.holder_check === 'Checked'), all: scored}[p.view];
-  if (p.view !== 'up5') drawTable(view.filter((d) => onPlatform(d.t, p)), p);
+  if (p.view !== 'up5' && p.view !== 'removed') drawTable(view.filter((d) => onPlatform(d.t, p)), p);
   drawChart(scored, p);
 }
 dash.onData(draw);
