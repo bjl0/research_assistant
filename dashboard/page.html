@@ -53,6 +53,9 @@
 .ls-check{color:var(--color-warn);font-weight:var(--cds-font-weight-medium)}
 .ls-pair{color:var(--color-fg-muted);font-size:var(--cds-font-size-caption);white-space:nowrap}
 .ls-red{color:var(--color-bad);font-weight:var(--cds-font-weight-medium)}
+.ls-alert{flex-wrap:wrap}
+.ls-chart-panel{flex:1 1 100%;min-width:0}
+.ls-chart-panel iframe{display:block;width:100%;height:28rem;border:1px solid var(--color-border-line);border-radius:var(--cds-radius);background:var(--color-panel)}
 .ls-foot-btns{display:inline-flex;gap:var(--cds-gap-sm)}
 .ls-alert-foot{display:flex;flex-wrap:wrap;gap:var(--cds-gap-sm);align-items:center;justify-content:space-between;font-size:var(--cds-font-size-caption);color:var(--color-fg-muted)}
 .ls-chart{position:relative;min-height:300px}
@@ -312,6 +315,8 @@ let sortKey = 'liquidity_usd', sortDir = -1;
 
 // "Acted on" marks are saved per viewer where this view allows it; without that the control stays hidden.
 let store = null, acted = {}, watch = {};
+const chartsOpen = new Set();
+const CHART_OK = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const capability = async (name) => {
   const c = globalThis.claude;
   if (!c) return null;
@@ -376,6 +381,11 @@ $('#alert-views').addEventListener('click', (event) => {
 $('#alert-cards').addEventListener('click', (event) => {
   const b = event.target.closest('button[data-acted]');
   if (b) return toggleMark('acted', b.dataset.acted);
+  const c = event.target.closest('button[data-chart]');
+  if (c) {
+    if (chartsOpen.has(c.dataset.chart)) chartsOpen.delete(c.dataset.chart); else chartsOpen.add(c.dataset.chart);
+    return draw();
+  }
   const w = event.target.closest('button[data-watch]');
   if (w) toggleMark('watch', w.dataset.watch);
 });
@@ -548,6 +558,13 @@ const drawAlerts = (src, p) => {
     chips.append(trig, first, age);
     const links = el('div', 'ls-links');
     links.append(...linksFor(a, false));
+    if (CHART_OK.test(String(a.mint))) {
+      const cb = el('button', 'ls-btn ls-chart-btn', chartsOpen.has(a.mint) ? 'Hide chart' : 'Chart');
+      cb.type = 'button';
+      cb.dataset.chart = a.mint;
+      cb.setAttribute('aria-expanded', String(chartsOpen.has(a.mint)));
+      links.append(cb);
+    }
 
     const stats = el('div', 'ls-stats');
     const stat = (label, node, sub) => {
@@ -644,6 +661,19 @@ const drawAlerts = (src, p) => {
     idCol.append(...Array.from(card.childNodes).slice(0, 3));
     bodyCol.append(...Array.from(card.childNodes));
     card.replaceChildren(idCol, bodyCol);
+    if (chartsOpen.has(a.mint) && CHART_OK.test(String(a.mint))) {
+      // DEX Screener's own chart for this token, drawn only while the card's Chart button is on. The address comes from the
+      // alert row but is checked as a plain Solana address first, so nothing else can be put in the frame's address.
+      const panel = el('div', 'ls-chart-panel');
+      const fr = document.createElement('iframe');
+      fr.src = 'https://dexscreener.com/solana/' + a.mint + '?embed=1&theme=dark&trades=0&info=0';
+      fr.title = 'Price chart for ' + String(a.symbol || a.mint);
+      fr.loading = 'lazy';
+      fr.referrerPolicy = 'no-referrer';
+      fr.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+      panel.append(fr, el('p', 'ls-note', 'If the chart stays blank, this view cannot show other websites; use the DEX Screener link instead.'));
+      card.append(panel);
+    }
     box.append(card);
   }
 };
