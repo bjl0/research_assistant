@@ -67,3 +67,7 @@ Each scan can message you on Telegram for every token that becomes an alert for 
 4. Create a file `screener_data/telegram.json` containing: `{"bot_token": "YOUR TOKEN", "chat_id": "123456789"}`
 
 Messages only go out from scans (terminal, serve button or auto scan), never from Reload prices. If Telegram can't be reached, the scan still finishes. Delete the file to switch alerts off.
+
+## Hands-off scanning without the browser
+
+`python3 screener/local.py watch` scans every 10 minutes (or `watch 15` for every 15) and sends your Telegram alerts, with no dashboard tab needed. On a Mac it keeps the computer from falling asleep while the window is open. Leave the Terminal window open and the Mac plugged in with the lid open (a closed lid on battery still sleeps it). If a scan fails it says so and tries again next time; after 3 failed scans in a row it sends you one Telegram warning. Press Ctrl+C to stop. Open `screener_data/dashboard.html` whenever you want to look at the results.

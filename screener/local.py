@@ -3,6 +3,8 @@
 
   python3 local.py run   [FOLDER]   fetch, screen, update and save everything (default folder: ./screener_data)
   python3 local.py page  [FOLDER]   rewrite FOLDER/dashboard.html (done automatically by run)
+  python3 local.py watch [MINUTES] [FOLDER]   scan every MINUTES (default 10, minimum 5) with no browser; keeps a Mac awake;
+                                    Telegram warning after 3 failed scans in a row (Ctrl+C to stop)
   python3 local.py serve [FOLDER]   open the dashboard in your browser with a "Run scan now" button and a way to save
                                     your limits; leave the window open while you use it (Ctrl+C to stop)
 
@@ -21,7 +23,7 @@ FOLDER holds
   log/new_alerts.txt    every new alert ever raised, with the time
 Nothing is ever deleted by the program.
 """
-import sys, os, re, json, html, csv, time, shutil, ssl, datetime as dt, urllib.request, urllib.error
+import sys, os, re, json, html, subprocess, csv, time, shutil, ssl, datetime as dt, urllib.request, urllib.error
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -541,12 +543,43 @@ def serve_cmd(folder, port=8765):
         print("Stopped.")
 
 
+def watch_cmd(folder, minutes):
+    """Scan again and again, no browser needed. A failed scan is reported and the loop carries on."""
+    minutes = max(5, minutes)
+    if sys.platform == "darwin":   # Mac: stop idle sleep for as long as this window is running
+        try: subprocess.Popen(["caffeinate", "-i", "-w", str(os.getpid())])
+        except Exception: pass
+    print("Scanning every %d minutes. Leave this window open; press Ctrl+C to stop." % minutes)
+    fails, warned = 0, False
+    while True:
+        print("\n--- scan at %s ---" % dt.datetime.now().strftime("%a %d %b %H:%M"))
+        try:
+            run_cmd(folder)
+            fails, warned = 0, False
+        except (Exception, SystemExit) as e:   # SystemExit: run_cmd uses it for "no market data" and certificate problems
+            fails += 1
+            print("Scan failed:", e)
+            if fails >= 3 and not warned:
+                warned = True
+                token, chat = telegram_settings(folder)
+                try:
+                    if token and chat:
+                        telegram_send(token, chat, "⚠️ The screener has failed %d scans in a row. Last error: %s" % (fails, html.escape(str(e))[:200]))
+                except Exception:
+                    pass
+        time.sleep(minutes * 60)
+
+
 def main():
     for stream in (sys.stdout, sys.stderr):   # Windows consoles default to a narrow encoding that chokes on token names
         try: stream.reconfigure(encoding="utf-8", errors="replace")
         except Exception: pass
-    if len(sys.argv) < 2 or sys.argv[1] not in ("run", "page", "serve"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("run", "page", "serve", "watch"):
         raise SystemExit(__doc__)
+    if sys.argv[1] == "watch":   # watch [minutes] [folder]
+        mins = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 10
+        rest = [a for a in sys.argv[2:] if not a.isdigit()]
+        return watch_cmd(rest[0] if rest else os.path.join(HERE, "..", "screener_data"), mins)
     # default: a screener_data folder next to the screener folder, wherever the command is typed
     folder = sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, "..", "screener_data")
     if sys.argv[1] == "page":
