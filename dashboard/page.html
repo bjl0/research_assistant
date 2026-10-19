@@ -167,6 +167,7 @@
       <button class="ls-btn" type="button" data-view="near">Miss by one</button>
       <button class="ls-btn" type="button" data-view="checked">All holder-checked</button>
       <button class="ls-btn" type="button" data-view="all">Everything screened</button>
+      <button class="ls-btn" type="button" data-view="market">Market limits only (skips RugCheck)</button>
       <button class="ls-btn" type="button" data-view="up5">Went up 5%+ since alert</button>
       <button class="ls-btn" type="button" data-view="removed">Removed: price fell</button>
     </div>
@@ -310,7 +311,7 @@ const params = () => {
     p[k] = Number.isFinite(n) ? n : DEFAULTS[k];
   }
   p.no_danger = p.no_danger !== false;
-  if (!['matches', 'near', 'checked', 'all', 'up5', 'removed'].includes(p.view)) p.view = 'matches';
+  if (!['matches', 'near', 'checked', 'all', 'up5', 'removed', 'market'].includes(p.view)) p.view = 'matches';
   if (!['all', 'new', 'meets', 'market', 'open', 'watch'].includes(p.alert_view)) p.alert_view = 'all';
   if (!['all', 'pump.fun', 'Raydium', 'other'].includes(p.platform)) p.platform = 'all';
   return p;
@@ -1002,7 +1003,13 @@ function draw() {
     ? `${int(fresh.length)} new ${fresh.length === 1 ? 'alert' : 'alerts'} in the last run: ${fresh.slice(0, 4).map((a) => a.symbol).join(', ')}${fresh.length > 4 ? ' and ' + int(fresh.length - 4) + ' more' : ''}. `
     : 'No new alerts in the last run. ';
   $('#takeaway').textContent = lead + `${int(matches.length)} of ${int(scored.length)} screened tokens meet every limit on screen now, and ${int(near.length)} miss by one.`;
-  const view = {matches, near, checked: scored.filter((d) => d.t.holder_check === 'Checked'), all: scored}[p.view];
+  // the list view of the same idea as the Alerts tab: only age, liquidity and 24h volume decide, RugCheck never filters
+  const marketOnly = scored.filter((d) => !d.fails.some((x) => x === 'age' || x === 'liquidity' || x === '24h volume'));
+  if (p.view === 'market') {
+    const unchecked = marketOnly.filter((d) => d.t.holder_check !== 'Checked').length;
+    $('#takeaway').textContent = `${int(marketOnly.length)} of ${int(scored.length)} screened tokens pass the age, liquidity and 24h volume limits. RugCheck is not used to filter this view; ${int(unchecked)} of them have no RugCheck data (holders, locks and wallet checks not done), so read the flags and holder columns before trusting any of them.`;
+  }
+  const view = {matches, near, market: marketOnly, checked: scored.filter((d) => d.t.holder_check === 'Checked'), all: scored}[p.view];
   if (p.view !== 'up5' && p.view !== 'removed') drawTable(view.filter((d) => onPlatform(d.t, p)), p);
   drawChart(scored, p);
 }
