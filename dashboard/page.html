@@ -115,6 +115,7 @@
       <button class="ls-btn" type="button" data-alert-view="all">All</button>
       <button class="ls-btn" type="button" data-alert-view="new">New in the last run</button>
       <button class="ls-btn" type="button" data-alert-view="meets">Still meets strategy</button>
+      <button class="ls-btn" type="button" data-alert-view="market">No RugCheck (market limits only)</button>
       <button class="ls-btn" type="button" data-alert-view="open" id="alert-view-open" hidden>Not acted on</button>
       <button class="ls-btn" type="button" data-alert-view="watch" id="alert-view-watch" hidden>★ Watchlist</button>
     </div>
@@ -166,7 +167,6 @@
       <button class="ls-btn" type="button" data-view="near">Miss by one</button>
       <button class="ls-btn" type="button" data-view="checked">All holder-checked</button>
       <button class="ls-btn" type="button" data-view="all">Everything screened</button>
-      <button class="ls-btn" type="button" data-view="market">Market limits only (skips RugCheck)</button>
       <button class="ls-btn" type="button" data-view="up5">Went up 5%+ since alert</button>
       <button class="ls-btn" type="button" data-view="removed">Removed: price fell</button>
     </div>
@@ -310,8 +310,8 @@ const params = () => {
     p[k] = Number.isFinite(n) ? n : DEFAULTS[k];
   }
   p.no_danger = p.no_danger !== false;
-  if (!['matches', 'near', 'checked', 'all', 'up5', 'removed', 'market'].includes(p.view)) p.view = 'matches';
-  if (!['all', 'new', 'meets', 'open', 'watch'].includes(p.alert_view)) p.alert_view = 'all';
+  if (!['matches', 'near', 'checked', 'all', 'up5', 'removed'].includes(p.view)) p.view = 'matches';
+  if (!['all', 'new', 'meets', 'market', 'open', 'watch'].includes(p.alert_view)) p.alert_view = 'all';
   if (!['all', 'pump.fun', 'Raydium', 'other'].includes(p.platform)) p.platform = 'all';
   return p;
 };
@@ -537,7 +537,7 @@ const resultPill = (t, fails) => {
   return el('span', 'ls-pill ' + (fails.includes('danger flag') ? 'ls-bad' : 'ls-off'), 'Misses: ' + fails.join(', '));
 };
 
-const drawAlerts = (src, p) => {
+const drawAlerts = (src, p, marketTokens = []) => {
   const box = $('#alert-cards');
   $('#alert-view-open').hidden = !store;
   $('#alert-view-watch').hidden = !store;
@@ -555,13 +555,22 @@ const drawAlerts = (src, p) => {
   }
   // the watchlist tab shows every watched token, even one the main views hide (removed, or carrying a wallet warning)
   let rows = p.alert_view === 'watch' ? src.data.filter((a) => watch[a.mint]) : src.data.filter((a) => !walletWarning(a) && !downAlert(a));
+  if (p.alert_view === 'market') {
+    // tokens that are not alerts (RugCheck missing or failing a limit) shown as cards; nothing here is saved as an alert
+    const have = new Set(src.data.map((a) => a.mint));
+    rows = marketTokens.filter((t) => !have.has(t.mint) && !smallToken(t)).map((t) => ({
+      ...t, unverified: true, first_alert_cap_usd: t.market_cap_usd, latest_cap_usd: t.market_cap_usd, first_alert_at: t.as_of,
+      first_alert_age: t.age, triggers: 0, is_new: false, change_since_first_pct: null,
+      now: t.holder_check === 'Checked' ? 'Misses a RugCheck limit' : 'RugCheck not checked',
+    })).sort((a, b) => (b.liquidity_usd || 0) - (a.liquidity_usd || 0));
+  }
   rows = rows.filter((a) => onPlatform(a, p));
   if (p.alert_view === 'new') rows = rows.filter((a) => a.is_new);
   if (p.alert_view === 'meets') rows = rows.filter((a) => a.now === 'Meets strategy');
   if (p.alert_view === 'open') rows = rows.filter((a) => !acted[a.mint]);
-  rows.sort((a, b) => (b.is_new ? 1 : 0) - (a.is_new ? 1 : 0) || String(b.first_alert_at).localeCompare(String(a.first_alert_at)) || (b.change_since_first_pct ?? -1e9) - (a.change_since_first_pct ?? -1e9));
+  if (p.alert_view !== 'market') rows.sort((a, b) => (b.is_new ? 1 : 0) - (a.is_new ? 1 : 0) || String(b.first_alert_at).localeCompare(String(a.first_alert_at)) || (b.change_since_first_pct ?? -1e9) - (a.change_since_first_pct ?? -1e9));
   if (!rows.length) {
-    box.append(el('p', 'ls-note', p.alert_view === 'watch' ? 'Nothing on your watchlist yet. Press Watch on an alert card to add it.' : src.data.length ? 'No alerts in this view.' : 'No token has met your saved strategy yet. The next hourly run will check again.'));
+    box.append(el('p', 'ls-note', p.alert_view === 'watch' ? 'Nothing on your watchlist yet. Press Watch on an alert card to add it.' : src.data.length ? (p.alert_view === 'market' ? 'No other token passes the age, liquidity and volume limits right now.' : 'No alerts in this view.') : 'No token has met your saved strategy yet. The next hourly run will check again.'));
     return;
   }
   for (const a of rows) {
@@ -585,11 +594,13 @@ const drawAlerts = (src, p) => {
     const chips = el('div', 'ls-chips');
     const trig = el('span', 'ls-chip');
     trig.append(mark(el('span', null, int(a.triggers)), a, 'triggers'), document.createTextNode(a.triggers === 1 ? ' trigger' : ' triggers'));
+    if (a.unverified) state.append(el('span', 'ls-pill ls-warn', 'Not an alert: RugCheck not used'));
     const first = el('span', 'ls-chip');
     first.append(document.createTextNode('First alert '), mark(el('span', null, when(a.first_alert_at)), a, 'first_alert_at'));
     const age = el('span', 'ls-chip');
     age.append(mark(el('span', null, a.first_alert_age || '—'), a, 'first_alert_age'), document.createTextNode(' old at first alert'));
-    chips.append(trig, first, age);
+    if (a.unverified) chips.append(el('span', 'ls-chip', (a.age || '—') + ' old'));
+    else chips.append(trig, first, age);
     const links = el('div', 'ls-links');
     links.append(...linksFor(a, false));
     if (CHART_OK.test(String(a.mint))) {
@@ -633,7 +644,7 @@ const drawAlerts = (src, p) => {
     const priced = el('span', 'ls-stat-l');
     priced.append(document.createTextNode('Priced '), mark(el('span', null, a.latest_cap_at ? when(a.latest_cap_at) : '—'), a, 'latest_cap_at'));
     stats.append(
-      stat('First alert cap', mark(el('span', 'ls-stat-v', dashIfNull(a.first_alert_cap_usd, usd)), a, 'first_alert_cap_usd')),
+      stat(a.unverified ? 'Market cap now' : 'First alert cap', mark(el('span', 'ls-stat-v', dashIfNull(a.first_alert_cap_usd, usd)), a, 'first_alert_cap_usd')),
       stat('Latest cap', mark(el('span', 'ls-stat-v', dashIfNull(a.latest_cap_usd, usd)), a, 'latest_cap_usd'), priced),
       stat('All-time high', mark(el('span', 'ls-stat-v', dashIfNull(ath, usd)), a, 'ath_cap_usd'), athNote),
       stat('Cap since first alert', mark(el('span', 'ls-stat-v ' + (change == null ? '' : change >= 0 ? 'ls-up' : 'ls-down'), dashIfNull(change, (v) => signed(v) + '%')), a, 'change_since_first_pct'), sinceNote),
@@ -953,7 +964,11 @@ function draw() {
   };
   fill('screen_counts', counts);
   fill('alert_counts', acounts);
-  drawAlerts(alerts, p);
+  // Blake (19 Oct): alert-style cards for tokens that pass only the market limits (age, liquidity, 24h volume), whatever RugCheck says
+  const mktDown = new Set(alerts.status === 'ok' ? alerts.data.filter(downAlert).map((x) => x.mint) : []);
+  const marketTokens = ok ? src.data.filter((t) => !walletWarning(t) && !mktDown.has(t.mint) && !smallToken(t)
+    && !failsOf(t, p).some((x) => x === 'age' || x === 'liquidity' || x === '24h volume')) : [];
+  drawAlerts(alerts, p, marketTokens);
   drawUp5(alerts, p);
 
   const box = $('#map-chart');
@@ -987,13 +1002,7 @@ function draw() {
     ? `${int(fresh.length)} new ${fresh.length === 1 ? 'alert' : 'alerts'} in the last run: ${fresh.slice(0, 4).map((a) => a.symbol).join(', ')}${fresh.length > 4 ? ' and ' + int(fresh.length - 4) + ' more' : ''}. `
     : 'No new alerts in the last run. ';
   $('#takeaway').textContent = lead + `${int(matches.length)} of ${int(scored.length)} screened tokens meet every limit on screen now, and ${int(near.length)} miss by one.`;
-  // Blake (19 Oct): a view that applies only the market limits (age, liquidity, 24h volume) so a RugCheck outage hides nothing
-  const marketOnly = scored.filter((d) => !d.fails.some((x) => x === 'age' || x === 'liquidity' || x === '24h volume'));
-  if (p.view === 'market') {
-    const unchecked = marketOnly.filter((d) => d.t.holder_check !== 'Checked').length;
-    $('#takeaway').textContent = `${int(marketOnly.length)} of ${int(scored.length)} screened tokens pass the age, liquidity and 24h volume limits. RugCheck is not used to filter this view; ${int(unchecked)} of them have no RugCheck data (holders, locks and wallet checks not done), so read the flags and holder columns before trusting any of them.`;
-  }
-  const view = {matches, near, market: marketOnly, checked: scored.filter((d) => d.t.holder_check === 'Checked'), all: scored}[p.view];
+  const view = {matches, near, checked: scored.filter((d) => d.t.holder_check === 'Checked'), all: scored}[p.view];
   if (p.view !== 'up5' && p.view !== 'removed') drawTable(view.filter((d) => onPlatform(d.t, p)), p);
   drawChart(scored, p);
 }
