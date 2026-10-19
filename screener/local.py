@@ -51,12 +51,16 @@ USER_URL = "https://frontend-api-v3.pump.fun/users/%s"
 PAUSE = 0.35   # seconds between requests to the same site
 
 
+UNREACHABLE = set()   # sites this computer could not even find (no internet, DNS or VPN trouble) during this run
+DNS_WORDS = ("nodename nor servname", "Name or service not known", "getaddrinfo", "Temporary failure in name resolution", "Network is unreachable")
 REFUSED = {}   # site -> number of answers this run that said "too many requests" (429) or "refused" (403)
 
 
 def get_json(url, tries=3):
     last = None
     host = url.split("/")[2]
+    if host in UNREACHABLE:
+        raise RuntimeError("%s: cannot reach this site from this computer" % host)
     for i in range(tries):
         try:
             with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=25) as f:
@@ -71,6 +75,9 @@ def get_json(url, tries=3):
                 time.sleep(min(int(wait), 30) if wait.isdigit() else 3 * (i + 1))   # the site asked us to slow down
         except Exception as e:
             last = str(getattr(e, "reason", e))
+            if any(w in last for w in DNS_WORDS):
+                UNREACHABLE.add(host)
+                break           # the name will not resolve; asking again will not help
         time.sleep(1.5 * (i + 1))
     if last and "CERTIFICATE_VERIFY_FAILED" in last:
         raise SystemExit(SSL_HELP)
@@ -172,7 +179,10 @@ def rate_notice(folder, ok):
     path = os.path.join(folder, "current", "status.json")
     was = bool((S.read_json(path, {}) or {}).get("limited"))
     limited = dict(REFUSED)
-    save(path, {"at": S.iso(time.time()), "limited": limited, "scan_ok": ok})
+    cut = sorted(UNREACHABLE)
+    save(path, {"at": S.iso(time.time()), "limited": limited, "unreachable": cut, "scan_ok": ok})
+    if cut:
+        print("\n" + "!" * 70 + "\n  CANNOT REACH: %s\n  This computer could not look these sites up (internet down, Wi-Fi switched, VPN or DNS blocking).\n  Nothing can be screened until it is back. Check the connection, then try again.\n" % ", ".join(cut) + "!" * 70)
     if limited:
         sites = ", ".join("%s (%d)" % kv for kv in sorted(limited.items()))
         print("\n" + "!" * 70 + "\n  RATE LIMITED: %s told the screener to slow down or refused requests.\n  Alerts may be missing or late until it stops. Try a longer wait between scans (watch 15).\n" % sites + "!" * 70)
@@ -305,6 +315,7 @@ def run_cmd(folder):
     raw = os.path.join(folder, "raw", stamp)
 
     REFUSED.clear()
+    UNREACHABLE.clear()
     problems, ncand, ntrack, npairs, nrep = fetch_inputs(run, as_of, p, prev_alerts, raw)
     rate_notice(folder, bool(npairs))
     if not npairs:
@@ -339,8 +350,10 @@ def run_cmd(folder):
     notify_new_alerts(folder, prev_alerts, alerts)
     shutil.rmtree(run, ignore_errors=True)
     print("Fetched %d candidates (+%d earlier alerts), %d market pairs, %d RugCheck reports." % (ncand, ntrack - ncand, npairs, nrep))
-    for x in problems:
-        print("Problem:", x)
+    for x in problems[:3]:
+        print("Problem:", x[:200])
+    if len(problems) > 3:
+        print("...and %d more problems like these (all of them are in log/runs.csv)." % (len(problems) - 3))
     print("Saved to", os.path.abspath(folder), "- open dashboard.html in a browser.")
 
 
@@ -403,7 +416,7 @@ def write_logs(folder, stamp, tokens, alerts, summary, now, counts, problems):
             f.write("".join("%s  %s\n" % (at, l) for l in new))
     append_csv(os.path.join(log, "runs.csv"), ["run_at", "candidates", "tracked", "market_pairs", "rugcheck_reports", "tokens_saved",
                                               "alerts_total", "new_alerts", "problems"],
-               [[at, counts[0], counts[1], counts[2], counts[3], len(tokens), len(alerts), len(new), " | ".join(problems)]])
+               [[at, counts[0], counts[1], counts[2], counts[3], len(tokens), len(alerts), len(new), " | ".join(problems)[:400]]])
 
 
 def write_data_js(folder):

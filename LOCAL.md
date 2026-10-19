@@ -75,3 +75,5 @@ Messages only go out from scans (terminal, serve button or auto scan), never fro
 ## Rate-limit warnings
 
 If DEX Screener, RugCheck or pump.fun answer "too many requests" (or refuse), the scan waits a few seconds and retries, then prints a large `RATE LIMITED` box in the terminal, turns the bar at the top of the dashboard red, and sends one Telegram message when it starts. Scanning less often (`watch 15` or `watch 20`) usually clears it.
+
+If your computer cannot look a site up at all (the error says `nodename nor servname provided, or not known`), the scan stops asking that site, prints one `CANNOT REACH` box and turns the dashboard bar red. That is a connection problem (internet down, Wi-Fi changed, VPN, or DNS blocking), not rate limiting.
