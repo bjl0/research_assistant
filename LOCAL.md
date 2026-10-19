@@ -77,3 +77,7 @@ Messages only go out from scans (terminal, serve button or auto scan), never fro
 If DEX Screener, RugCheck or pump.fun answer "too many requests" (or refuse), the scan waits a few seconds and retries, then prints a large `RATE LIMITED` box in the terminal, turns the bar at the top of the dashboard red, and sends one Telegram message when it starts. Scanning less often (`watch 15` or `watch 20`) usually clears it.
 
 If your computer cannot look a site up at all (the error says `nodename nor servname provided, or not known`), the scan stops asking that site, prints one `CANNOT REACH` box and turns the dashboard bar red. That is a connection problem (internet down, Wi-Fi changed, VPN, or DNS blocking), not rate limiting.
+
+## When RugCheck fails to load
+
+Alerts need RugCheck's holder, liquidity-lock and wallet data, so a token cannot become a real alert while RugCheck is unreachable. Instead, for a token that passes the age, liquidity and volume limits but whose RugCheck report failed, you get one Telegram message headed "Possible alert (unverified)" saying "RugCheck API failed to load" and that the holder, lock and wallet checks were not done. These are not saved as alerts. Once RugCheck works again, a token that passes everything becomes a normal alert and you get the normal message.

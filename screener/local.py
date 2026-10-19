@@ -53,6 +53,7 @@ PAUSE = 0.35   # seconds between requests to the same site
 
 UNREACHABLE = set()   # sites this computer could not even find (no internet, DNS or VPN trouble) during this run
 DNS_WORDS = ("nodename nor servname", "Name or service not known", "getaddrinfo", "Temporary failure in name resolution", "Network is unreachable")
+RUGCHECK_FAILED = set()   # tokens whose RugCheck report could not be loaded this run
 REFUSED = {}   # site -> number of answers this run that said "too many requests" (429) or "refused" (403)
 
 
@@ -195,6 +196,39 @@ def rate_notice(folder, ok):
                 pass
 
 
+def notify_unverified(folder, p, prev_alerts, tokens):
+    """RugCheck could not be loaded, so these tokens cannot be checked against the holder, lock and wallet limits. Tell Blake once per token,
+    clearly marked as unverified. They are not saved as alerts; when RugCheck works again a token that passes becomes a normal alert."""
+    token, chat = telegram_settings(folder)
+    if not token or not chat or not RUGCHECK_FAILED:
+        return
+    path = os.path.join(folder, "current", "unverified_sent.json")
+    sent = set(S.read_json(path, []) or [])
+    seen = {a.get("mint") for a in prev_alerts}
+    todo = [t for t in tokens if t.get("mint") in RUGCHECK_FAILED and t["mint"] not in sent and t["mint"] not in seen
+            and re.fullmatch(S.B58, str(t["mint"])) and S.fails(t, p) == ["holders not checked"]]
+    esc = lambda x: html.escape(str(x), quote=True)
+    try:
+        for t in todo[:5]:
+            m = t["mint"]
+            lines = ["⚠️ <b>Possible alert (unverified): %s</b>" % esc(str(t.get("symbol") or "?")[:20]),
+                     esc(str(t.get("name") or "")[:40]), "",
+                     "🛑 <b>RugCheck API failed to load.</b> Holders, liquidity lock and wallet checks were NOT done, so this has not been checked against all your limits.", "",
+                     "📊 <b>Stats</b>",
+                     "├ MC: %s" % money(t.get("market_cap_usd")), "├ Vol: %s (24h)" % money(t.get("volume_24h_usd")),
+                     "├ LP: %s" % money(t.get("liquidity_usd")), "├ Vol/LP: %s" % ("%sx" % t["vol_to_liq"] if t.get("vol_to_liq") is not None else "n/a"),
+                     "├ 1H: %s" % pct(t.get("change_1h_pct")), "└ Age: %s" % esc(t.get("age") or "n/a"), "",
+                     '📈 <a href="https://dexscreener.com/solana/%s">DEX Screener</a> • <a href="https://gmgn.ai/sol/token/%s">GMGN</a>' % (m, m),
+                     "<code>%s</code>" % m]
+            telegram_send(token, chat, "\n".join(lines))
+            sent.add(m)
+        if todo:
+            save(path, sorted(sent))
+            print("Sent %d unverified Telegram alert(s) (RugCheck failed)." % min(len(todo), 5))
+    except Exception as e:
+        print("Telegram message failed (the scan itself is fine):", getattr(e, "reason", e))
+
+
 def save(path, obj):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     json.dump(obj, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=0)
@@ -270,6 +304,7 @@ def fetch_inputs(run, as_of, p, prev_alerts, raw):
             save(os.path.join(inp, "report_%02d.json" % n), compact_report(r))
         except Exception as e:
             problems.append("RugCheck report for %s failed (%s)" % (m, e))
+            RUGCHECK_FAILED.add(m)
         time.sleep(PAUSE)
     save(os.path.join(raw, "rugcheck_reports.json"), reports)
     return problems, len(cands), len(mints), len(pairs), n
@@ -315,6 +350,7 @@ def run_cmd(folder):
     raw = os.path.join(folder, "raw", stamp)
 
     REFUSED.clear()
+    RUGCHECK_FAILED.clear()
     UNREACHABLE.clear()
     problems, ncand, ntrack, npairs, nrep = fetch_inputs(run, as_of, p, prev_alerts, raw)
     rate_notice(folder, bool(npairs))
@@ -348,6 +384,7 @@ def run_cmd(folder):
     write_data_js(folder)
     write_page(folder)
     notify_new_alerts(folder, prev_alerts, alerts)
+    notify_unverified(folder, p, prev_alerts, tokens)
     shutil.rmtree(run, ignore_errors=True)
     print("Fetched %d candidates (+%d earlier alerts), %d market pairs, %d RugCheck reports." % (ncand, ntrack - ncand, npairs, nrep))
     for x in problems[:3]:
