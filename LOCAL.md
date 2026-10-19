@@ -71,3 +71,7 @@ Messages only go out from scans (terminal, serve button or auto scan), never fro
 ## Hands-off scanning without the browser
 
 `python3 screener/local.py watch` scans every 10 minutes (or `watch 15` for every 15) and sends your Telegram alerts, with no dashboard tab needed. On a Mac it keeps the computer from falling asleep while the window is open. Leave the Terminal window open and the Mac plugged in with the lid open (a closed lid on battery still sleeps it). If a scan fails it says so and tries again next time; after 3 failed scans in a row it sends you one Telegram warning. Press Ctrl+C to stop. Open `screener_data/dashboard.html` whenever you want to look at the results.
+
+## Rate-limit warnings
+
+If DEX Screener, RugCheck or pump.fun answer "too many requests" (or refuse), the scan waits a few seconds and retries, then prints a large `RATE LIMITED` box in the terminal, turns the bar at the top of the dashboard red, and sends one Telegram message when it starts. Scanning less often (`watch 15` or `watch 20`) usually clears it.

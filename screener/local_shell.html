@@ -108,6 +108,11 @@ body{margin:0 auto;max-width:1280px;padding:24px 16px 48px;background:var(--colo
     checkNew(state.alerts.data);
     const bar = document.getElementById('local-bar');
     if (bar && d.written_at) bar.textContent = 'Local copy. Last run saved ' + new Date(d.written_at).toLocaleString() + '.';
+    const lim = (d.notice && d.notice.limited) || {};
+    if (bar && Object.keys(lim).length) {
+      bar.textContent += ' RATE LIMITED by ' + Object.keys(lim).join(', ') + ' in the last scan, so alerts may be missing or late. Scan less often (watch 15) until it clears.';
+      bar.style.cssText = 'background:#b00020;color:#fff;font-weight:600;padding:.5rem .75rem;border-radius:8px';
+    } else if (bar) bar.style.cssText = '';
     emit();
   };
   const load = (after) => {

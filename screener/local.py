@@ -51,8 +51,12 @@ USER_URL = "https://frontend-api-v3.pump.fun/users/%s"
 PAUSE = 0.35   # seconds between requests to the same site
 
 
+REFUSED = {}   # site -> number of answers this run that said "too many requests" (429) or "refused" (403)
+
+
 def get_json(url, tries=3):
     last = None
+    host = url.split("/")[2]
     for i in range(tries):
         try:
             with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=25) as f:
@@ -61,6 +65,10 @@ def get_json(url, tries=3):
             last = "HTTP %d" % e.code
             if e.code in (400, 404):
                 break          # nothing there; asking again will not help
+            if e.code in (429, 403):
+                REFUSED[host] = REFUSED.get(host, 0) + 1
+                wait = e.headers.get("Retry-After", "") if e.headers else ""
+                time.sleep(min(int(wait), 30) if wait.isdigit() else 3 * (i + 1))   # the site asked us to slow down
         except Exception as e:
             last = str(getattr(e, "reason", e))
         time.sleep(1.5 * (i + 1))
@@ -157,6 +165,24 @@ def notify_new_alerts(folder, prev_alerts, alerts):
         print("Telegram message failed (the scan itself is fine):", getattr(e, "reason", e))
     if sent:
         print("Sent %d Telegram alert(s)." % sent)
+
+
+def rate_notice(folder, ok):
+    """Write current/status.json (the dashboard banner reads it), shout in the terminal, and send one Telegram message when it starts."""
+    path = os.path.join(folder, "current", "status.json")
+    was = bool((S.read_json(path, {}) or {}).get("limited"))
+    limited = dict(REFUSED)
+    save(path, {"at": S.iso(time.time()), "limited": limited, "scan_ok": ok})
+    if limited:
+        sites = ", ".join("%s (%d)" % kv for kv in sorted(limited.items()))
+        print("\n" + "!" * 70 + "\n  RATE LIMITED: %s told the screener to slow down or refused requests.\n  Alerts may be missing or late until it stops. Try a longer wait between scans (watch 15).\n" % sites + "!" * 70)
+        if not was:
+            token, chat = telegram_settings(folder)
+            try:
+                if token and chat:
+                    telegram_send(token, chat, "⚠️ Screener is being rate limited by %s. Scans may miss alerts until it clears." % html.escape(sites))
+            except Exception:
+                pass
 
 
 def save(path, obj):
@@ -278,8 +304,11 @@ def run_cmd(folder):
     prev_alerts = S.read_json(os.path.join(run, "prev_alerts.json"), [])
     raw = os.path.join(folder, "raw", stamp)
 
+    REFUSED.clear()
     problems, ncand, ntrack, npairs, nrep = fetch_inputs(run, as_of, p, prev_alerts, raw)
+    rate_notice(folder, bool(npairs))
     if not npairs:
+        write_data_js(folder)
         raise SystemExit("No market data came back (%s). Nothing was changed." % "; ".join(problems or ["no reason given"]))
 
     def screen_cmd(*args):
@@ -382,6 +411,7 @@ def write_data_js(folder):
     d = {k: S.read_json(os.path.join(cur, k + ".json"), []) for k in ("tokens", "alerts")}   # a missing file (no finished run yet) shows as empty
     d["params"] = S.read_json(os.path.join(folder, "params.json"), {})
     d["written_at"] = S.iso(time.time())
+    d["notice"] = S.read_json(os.path.join(cur, "status.json"), {})
     tmp = os.path.join(cur, "data.js.tmp")
     open(tmp, "w", encoding="utf-8").write("window.__SCREENER_DATA = " + json.dumps(d, ensure_ascii=False) + ";\n")
     os.replace(tmp, os.path.join(cur, "data.js"))
