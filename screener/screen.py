@@ -56,7 +56,7 @@ RAYDIUM_AUTH = {"GpMZbSM2GgvTKHJirzeGfMFoaZ8UR2X7F4v8vHTvxFbL": "Raydium CPMM po
                 "5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1": "Raydium pool"}
 VENUES = {"pumpfun": "Pump.fun bonding curve", "pumpswap": "PumpSwap", "raydium": "Raydium",
           "meteoradbc": "Meteora bonding curve", "meteora": "Meteora", "orca": "Orca"}
-DEFAULTS = dict(max_age_days=7, min_liq=10000, min_vol=10000, min_holders=500, max_top10=30,
+DEFAULTS = dict(max_age_days=7, min_liq=10000, min_vol=10000, min_holders=100, max_top10=30,
                 max_wallet=10, min_locked=90, no_danger=True)
 
 

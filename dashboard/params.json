@@ -3,7 +3,7 @@
  "max_age_days": 7,
  "max_top10": 30,
  "max_wallet": 10,
- "min_holders": 500,
+ "min_holders": 100,
  "min_liq": 10000,
  "min_locked": 90,
  "min_vol": 10000,
