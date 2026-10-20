@@ -124,6 +124,7 @@
       <button class="ls-btn" type="button" data-platform="all">All</button>
       <button class="ls-btn" type="button" data-platform="pump.fun">pump.fun</button>
       <button class="ls-btn" type="button" data-platform="Raydium">Raydium</button>
+      <button class="ls-btn" type="button" data-platform="StonkFun">StonkFun</button>
       <button class="ls-btn" type="button" data-platform="other">Other</button>
     </div>
     <div class="ls-alerts dash-skeleton" id="alert-cards" data-source="alerts"></div>
@@ -176,6 +177,7 @@
       <button class="ls-btn" type="button" data-platform="all">All</button>
       <button class="ls-btn" type="button" data-platform="pump.fun">pump.fun</button>
       <button class="ls-btn" type="button" data-platform="Raydium">Raydium</button>
+      <button class="ls-btn" type="button" data-platform="StonkFun">StonkFun</button>
       <button class="ls-btn" type="button" data-platform="other">Other</button>
     </div>
     <p class="ls-note" id="up5-note" hidden></p>
@@ -313,7 +315,7 @@ const params = () => {
   p.no_danger = p.no_danger !== false;
   if (!['matches', 'near', 'checked', 'all', 'up5', 'removed', 'market'].includes(p.view)) p.view = 'matches';
   if (!['all', 'new', 'meets', 'market', 'open', 'watch'].includes(p.alert_view)) p.alert_view = 'all';
-  if (!['all', 'pump.fun', 'Raydium', 'other'].includes(p.platform)) p.platform = 'all';
+  if (!['all', 'pump.fun', 'Raydium', 'StonkFun', 'other'].includes(p.platform)) p.platform = 'all';
   return p;
 };
 
@@ -458,6 +460,7 @@ const safeUrl = (u, starts) => (typeof u === 'string' && starts.some((s) => u.st
 // what a token trades against, and where it launched / trades (Blake, 11 Oct)
 let tokenByMint = new Map();
 const platformOf = (r) => {
+  if (r.stonkfun) return 'StonkFun';   // launched on StonkFun (Raydium LaunchLab); the local scan adds this from StonkFun's own API
   const v = String(r.venue || '');
   if (String(r.mint || '').endsWith('pump') || /pump/i.test(v)) return 'pump.fun';
   if (/raydium/i.test(v)) return 'Raydium';
@@ -467,18 +470,28 @@ const platformOf = (r) => {
 // platform filter (Blake, 18 Oct): pump.fun covers the bonding curve and PumpSwap; Other is everything not pump.fun or Raydium
 const onPlatform = (r, p) => {
   if (p.platform === 'all') return true;
-  const plat = platformOf(r.venue ? r : {...r, venue: (tokenByMint.get(r.mint) || {}).venue});
-  return p.platform === 'other' ? plat !== 'pump.fun' && plat !== 'Raydium' : plat === p.platform;
+  const plat = platformOf(r.venue ? r : {...r, venue: (tokenByMint.get(r.mint) || {}).venue, stonkfun: r.stonkfun || (tokenByMint.get(r.mint) || {}).stonkfun});
+  return p.platform === 'other' ? plat !== 'pump.fun' && plat !== 'Raydium' && plat !== 'StonkFun' : plat === p.platform;
 };
 const pairNodes = (r) => {
   const quote = String(r.quote || (tokenByMint.get(r.mint) || {}).quote || '').slice(0, 20);
   const out = [];
   if (quote) out.push(el('span', 'ls-pair', '/ ' + quote));
-  const plat = platformOf(r.venue ? r : {...r, venue: (tokenByMint.get(r.mint) || {}).venue});
+  const sf = r.stonkfun || (tokenByMint.get(r.mint) || {}).stonkfun;
+  const plat = platformOf(r.venue ? {...r, stonkfun: sf} : {...r, venue: (tokenByMint.get(r.mint) || {}).venue, stonkfun: sf});
   if (plat) {
     const p = el('span', 'ls-pill ls-off', plat);
     p.title = String(r.venue || '');
     out.push(p);
+  }
+  if (sf && typeof sf === 'object') {
+    // what StonkFun reports for its own launches: the paired asset, and any transfer tax (shown only, never used to hide)
+    if (sf.category) out.push(el('span', 'ls-pair', String(sf.category).slice(0, 12)));
+    if (sf.tax_bps > 0) {
+      const t = el('span', 'ls-pill ls-warn', 'Tax ' + Number((sf.tax_bps / 100).toFixed(2)) + '%');
+      t.title = 'StonkFun charges this transfer tax on every transfer' + (sf.mode ? ' (' + sf.mode + ' launch)' : '');
+      out.push(t);
+    }
   }
   return out;
 };

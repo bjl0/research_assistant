@@ -53,6 +53,7 @@ PAUSE = 0.35   # seconds between requests to the same site
 
 UNREACHABLE = set()   # sites this computer could not even find (no internet, DNS or VPN trouble) during this run
 DNS_WORDS = ("nodename nor servname", "Name or service not known", "getaddrinfo", "Temporary failure in name resolution", "Network is unreachable")
+STONK_URL = "https://www.stonkfun.xyz/api/public/v1/tokens?sort=%s&pageSize=%d"
 RUGCHECK_FAILED = set()   # tokens whose RugCheck report could not be loaded this run
 REFUSED = {}   # site -> number of answers this run that said "too many requests" (429) or "refused" (403)
 
@@ -83,6 +84,41 @@ def get_json(url, tries=3):
     if last and "CERTIFICATE_VERIFY_FAILED" in last:
         raise SystemExit(SSL_HELP)
     raise RuntimeError("%s: %s" % (url.split("?")[0], last))
+
+
+STONK = {}   # mint -> what StonkFun told us this run
+
+
+def stonk_info(t):
+    """The StonkFun facts worth showing: launchpad, paired asset, tax and fee shares, graduation progress. Numbers only, strings short."""
+    if not isinstance(t, dict):
+        return None
+    num = lambda v: v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+    q = t.get("quote") if isinstance(t.get("quote"), dict) else {}
+    gp = num(t.get("graduationProgress"))
+    return {"quote": str(q.get("symbol") or "")[:20], "category": str(q.get("categoryLabel") or "")[:20],
+            "mode": str(t.get("mode") or "")[:20], "status": str(t.get("status") or "")[:20],
+            "tax_bps": num((t.get("transferFee") or {}).get("bps")) or 0,
+            "fee_recipients_bps": num((t.get("feeRecipients") or {}).get("shareBps")),
+            "community_bps": num((t.get("communityMode") or {}).get("shareBps")),
+            "graduation_pct": round(gp * 100, 1) if gp is not None else None}
+
+
+def merge_stonk(cur, folder_cur):
+    """Put the StonkFun facts on tokens.json and alerts.json rows. A cache keeps them for alerts that fall off the lists."""
+    path = os.path.join(folder_cur, "stonkfun_info.json")
+    cache = S.read_json(path, {}) or {}
+    cache.update(STONK)
+    keep = {}
+    for name in ("tokens", "alerts"):
+        f = os.path.join(folder_cur, name + ".json")
+        rows = S.read_json(f, [])
+        for r in rows:
+            if r.get("mint") in cache:
+                r["stonkfun"] = cache[r["mint"]]
+                keep[r["mint"]] = cache[r["mint"]]
+        save(f, rows)
+    save(path, keep)
 
 
 def telegram_settings(folder):
@@ -132,6 +168,10 @@ def alert_message(a):
             ("Hold", "{:,}".format(g("holders")) if isinstance(g("holders"), (int, float)) else "n/a"),
             ("Top10", "%s%% · max %s%%" % (g("top10_wallets_pct"), g("largest_wallet_pct"))),
             ("Age", str(a.get("first_alert_age") or a.get("age") or "n/a"))]
+    sf = a.get("stonkfun") if isinstance(a.get("stonkfun"), dict) else None
+    if sf:
+        rows.append(("Pair", "%s %s" % (sf.get("quote") or "?", sf.get("category") or "")))
+        rows.append(("Tax", "%s%% on every transfer" % (sf["tax_bps"] / 100) if sf.get("tax_bps") else "none"))
     rug = [("Flags", str(g("flags") or "none")[:120]),
            ("Linked", "%s wallets" % g("linked_wallets") if g("linked_wallets") is not None else "n/a")]
     stats = "\n".join("%s %s: %s" % ("└" if i == len(rows) - 1 else "├", k, v) for i, (k, v) in enumerate(rows))
@@ -143,6 +183,8 @@ def alert_message(a):
     pf = a.get("pumpfun_url")
     if isinstance(pf, str) and pf.startswith("https://pump.fun/"):
         soc.append('<a href="%s">pump.fun</a>' % esc(pf))
+    if sf:
+        plat = "StonkFun"
     out = ["🚨 <b>New alert: %s</b>" % esc(str(a.get("symbol") or "?")[:20]), esc(str(a.get("name") or "")[:40]) + (" · " + esc(plat) if plat else ""),
            "", "📊 <b>Stats</b>", esc(stats), "", "🛡 <b>RugCheck</b>", esc(rugtxt)]
     if soc:
@@ -217,7 +259,8 @@ def notify_unverified(folder, p, prev_alerts, tokens):
                      "📊 <b>Stats</b>",
                      "├ MC: %s" % money(t.get("market_cap_usd")), "├ Vol: %s (24h)" % money(t.get("volume_24h_usd")),
                      "├ LP: %s" % money(t.get("liquidity_usd")), "├ Vol/LP: %s" % ("%sx" % t["vol_to_liq"] if t.get("vol_to_liq") is not None else "n/a"),
-                     "├ 1H: %s" % pct(t.get("change_1h_pct")), "└ Age: %s" % esc(t.get("age") or "n/a"), "",
+                     "├ 1H: %s" % pct(t.get("change_1h_pct")), "├ Age: %s" % esc(t.get("age") or "n/a"),
+                     "└ StonkFun tax: %s" % (esc("%s%% on every transfer" % (t["stonkfun"]["tax_bps"] / 100) if t["stonkfun"].get("tax_bps") else "none") if isinstance(t.get("stonkfun"), dict) else "n/a (not a StonkFun coin)"), "",
                      '📈 <a href="https://dexscreener.com/solana/%s">DEX Screener</a> • <a href="https://gmgn.ai/sol/token/%s">GMGN</a>' % (m, m),
                      "<code>%s</code>" % m]
             telegram_send(token, chat, "\n".join(lines))
@@ -279,6 +322,20 @@ def fetch_inputs(run, as_of, p, prev_alerts, raw):
             problems.append("candidate list %s failed (%s)" % (name, e))
         time.sleep(PAUSE)
     save(os.path.join(raw, "candidate_lists.json"), lists)
+    # StonkFun's own launch lists (busiest and newest): extra candidates, plus what only StonkFun knows about each coin
+    stonk = {}
+    for sort, size in (("volume", 100), ("newest", 50)):
+        try:
+            for t in (get_json(STONK_URL % (sort, size)).get("data") or {}).get("tokens") or []:
+                info = stonk_info(t)
+                if info and re.fullmatch(S.B58, str(t.get("mint"))):
+                    stonk[t["mint"]] = info
+        except Exception as e:
+            problems.append("StonkFun %s list failed (%s)" % (sort, e))
+        time.sleep(PAUSE)
+    STONK.clear()
+    STONK.update(stonk)
+    open(os.path.join(inp, "candidates_stonkfun.txt"), "w", encoding="utf-8").write("\n".join(stonk) + "\n")
     cands = S.candidates(run)
     mints = list(cands) + [m for m in S.tracked(prev_alerts, as_of) if m not in cands]
     pairs, n = [], 0
@@ -373,6 +430,7 @@ def run_cmd(folder):
     out = os.path.join(run, "out")
     for f in ("tokens.json", "alerts.json", "profiles_doc.json"):
         shutil.copy(os.path.join(out, f), os.path.join(cur, f))
+    merge_stonk(cur, cur)
     tokens, alerts = json.load(open(os.path.join(cur, "tokens.json"), encoding="utf-8")), json.load(open(os.path.join(cur, "alerts.json"), encoding="utf-8"))
     summary = open(os.path.join(out, "summary.txt"), encoding="utf-8").read()
     # history: what the data looked like after this run (thumbnails left out, they are big and never change)

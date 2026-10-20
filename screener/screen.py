@@ -107,10 +107,11 @@ def get_params(run):
 
 def candidates(run):
     out = {}
-    for name, via in (("profiles", "New profile"), ("boosts_latest", "Paid boost"), ("boosts_top", "Paid boost")):
+    for name, via in (("profiles", "New profile"), ("boosts_latest", "Paid boost"), ("boosts_top", "Paid boost"), ("stonkfun", "StonkFun")):
         path = os.path.join(run, "in", "candidates_%s.txt" % name)
         if not os.path.exists(path):
-            print("WARNING: missing", path)
+            if name != "stonkfun":      # only local.py fetches the StonkFun list; the Claude tasks never do
+                print("WARNING: missing", path)
             continue
         for m in re.finditer(r"(?m)^\s*(%s)\b" % B58, open(path, encoding="utf-8").read()):
             out.setdefault(m.group(1), via)
